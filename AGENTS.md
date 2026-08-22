@@ -122,3 +122,10 @@
   ARP, and DHCP traffic. Router network, firewall, and flow-offload
   configuration must not be changed by implementation or testing. Routine
   soak verification is eight minutes; 30 minutes requires an explicit request.
+- 2026-08-22: The accounting correction and its deterministic browser fixture
+  are implemented pending package and router verification. The fixture gives
+  `eth4`, `pppoe-wan`, and an unrelated default-route VPN deliberately divergent
+  counters, checks inverse LAN bridge direction, and requires the overall rate
+  to equal the single deduplicated WAN row. Sensor probing now treats a nonzero
+  command exit as failure and is covered by two failed probes followed by a
+  successful third probe.

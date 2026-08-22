@@ -12,7 +12,7 @@
 				"network.interface": [ "dump" ],
 				"system": [ "info" ]
 			},
-			"uci": [ "system" ]
+			"uci": [ "firewall", "network", "system" ]
 		}
 	}
 }

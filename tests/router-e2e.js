@@ -10,7 +10,7 @@ const username = process.env.MONITOR_ROUTER_USER || 'root';
 const password = process.env.MONITOR_ROUTER_PASSWORD;
 const chromePath = process.env.MONITOR_CHROME_PATH;
 const outputDir = process.env.MONITOR_OUTPUT_DIR;
-const soakMinutes = Number(process.env.MONITOR_SOAK_MINUTES || 30);
+const soakMinutes = Number(process.env.MONITOR_SOAK_MINUTES || 8);
 
 for (const [ name, value ] of Object.entries({ baseUrl, password, chromePath, outputDir }))
 	assert(value, `Missing required environment value: ${name}`);
@@ -97,14 +97,118 @@ async function smoke(browser, locale, viewport, expectedTitle, name) {
 	await login(page);
 	await page.waitForTimeout(6000);
 	assert.equal((await page.locator('h2').innerText()).trim(), expectedTitle);
-	assert.equal(await page.locator('table').nth(1).locator('tbody tr').count(), 4);
+	assert.equal(await page.locator('table').nth(1).locator('tbody tr').count(), 2);
 	assert.deepEqual(await page.locator('table').nth(1).locator('tbody tr td:first-child').allTextContents(),
-		[ 'lan', 'modem', 'wan', 'wan6' ]);
-	assert.equal(await page.locator('table').nth(1).locator('tbody tr td[data-title]').count(), 28);
+		[ 'lan (br-lan)', 'wan (eth4)' ]);
+	assert.equal(await page.locator('table').nth(1).locator('tbody tr td[data-title]').count(), 14);
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
 	assert.equal(results.consoleErrors.length, 0);
 	assert.equal(results.pageErrors.length, 0);
 	await screenshot(page, name);
+	await context.close();
+}
+
+function rateInMiB(text) {
+	const match = /^(\d+\.\d{2}) (KB|MB|GB)\/s$/.exec(text);
+	assert(match, `Invalid rate: ${text}`);
+	return Number(match[1]) * ({ KB: 1 / 1024, MB: 1, GB: 1024 })[match[2]];
+}
+
+async function trafficFixture(browser) {
+	const MiB = 1024 ** 2;
+	const GiB = 1024 ** 3;
+	const interfaces = [
+		{ interface: 'modem', up: true, dynamic: false, uptime: 800, device: 'eth4', l3_device: 'eth4', route: [] },
+		{ interface: 'wan6', up: false, pending: true, dynamic: false, device: 'eth4' },
+		{ interface: 'lan', up: true, dynamic: false, uptime: 1000, device: 'br-lan', l3_device: 'br-lan', route: [] },
+		{ interface: 'wan', up: true, dynamic: false, uptime: 900, device: 'eth4', l3_device: 'pppoe-wan', route: [
+			{ target: '0.0.0.0', mask: 0 }
+		] },
+		{ interface: 'wan_6', up: true, dynamic: true, uptime: 880, device: 'pppoe-wan', l3_device: 'pppoe-wan',
+			data: { zone: 'wan' }, route: [ { target: '::', mask: 0 } ] },
+		{ interface: 'vpn', up: true, dynamic: true, uptime: 700, device: 'tailscale0', l3_device: 'tailscale0',
+			data: { zone: 'vpn' }, route: [ { target: '0.0.0.0', mask: 0 } ] }
+	];
+	const context = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 900 } });
+	const page = await context.newPage();
+	let sample = -1;
+
+	await page.route('**/ubus/**', async route => {
+		const batch = calls(route.request().postData());
+		const response = await route.fetch();
+		let reply = await response.json();
+		const replies = [].concat(reply);
+		let changed = false;
+
+		if (batch.some(call => call.params?.[1] === 'luci-rpc' && call.params?.[2] === 'getNetworkDevices'))
+			sample++;
+
+		for (const call of batch) {
+			const item = replies.find(candidate => candidate.id === call.id);
+			if (!item)
+				continue;
+
+			const object = call.params?.[1];
+			const method = call.params?.[2];
+			const n = Math.max(sample, 0);
+
+			if (object === 'network.interface' && method === 'dump') {
+				item.result = [ 0, { interface: interfaces } ];
+				changed = true;
+			}
+			else if (object === 'luci-rpc' && method === 'getNetworkDevices') {
+				item.result = [ 0, {
+					'br-lan': { stats: { rx_bytes: 256 * MiB + n * 5 * MiB, tx_bytes: 8 * GiB + n * 20 * MiB } },
+					'eth4': { stats: { rx_bytes: 4 * GiB + n * 10 * MiB, tx_bytes: 512 * MiB + n * 2.5 * MiB } },
+					'pppoe-wan': { stats: { rx_bytes: 64 * GiB + n * 100 * MiB, tx_bytes: 32 * GiB + n * 50 * MiB } },
+					'tailscale0': { stats: { rx_bytes: 128 * GiB + n * GiB, tx_bytes: 128 * GiB + n * GiB } }
+				} ];
+				changed = true;
+			}
+			else if (object === 'system' && method === 'info') {
+				item.result = [ 0, { localtime: 1787429279 + n * 5, memory: { total: 1024, free: 256 } } ];
+				changed = true;
+			}
+			else if (object === 'luci' && method === 'getCPUUsage') {
+				item.result = [ 0, { cpuusage: '12%' } ];
+				changed = true;
+			}
+			else if (object === 'file' && method === 'exec') {
+				item.result = [ 0, { code: 0, stdout: '{}', stderr: '' } ];
+				changed = true;
+			}
+		}
+
+		if (changed)
+			await route.fulfill({ response, body: JSON.stringify(Array.isArray(reply) ? replies : replies[0]) });
+		else
+			await route.fulfill({ response });
+	});
+
+	watch(page);
+	await login(page);
+	await page.waitForTimeout(6200);
+	const tables = page.locator('table');
+	const summary = (await tables.nth(0).locator('tbody tr td:last-child').allTextContents()).map(value => value.trim());
+	const rows = await tables.nth(1).locator('tbody tr').evaluateAll(items => items.map(row =>
+		Array.from(row.cells, cell => cell.textContent.trim())));
+
+	assert.deepEqual(rows.map(row => row[0]), [ 'lan (br-lan)', 'wan (eth4)' ]);
+	assert.deepEqual(rows.map(row => row[1]), [ 'Connected', 'Connected' ]);
+	assert.equal(rows[0][4], '8.02 GB');
+	assert.equal(rows[0][5], '261.00 MB');
+	assert.equal(rows[1][4], '4.01 GB');
+	assert.equal(rows[1][5], '514.50 MB');
+	assert(rateInMiB(rows[0][2]) > 3.2 && rateInMiB(rows[0][2]) < 4.8);
+	assert(rateInMiB(rows[0][3]) > 0.8 && rateInMiB(rows[0][3]) < 1.2);
+	assert(rateInMiB(rows[1][2]) > 1.6 && rateInMiB(rows[1][2]) < 2.4);
+	assert(rateInMiB(rows[1][3]) > 0.4 && rateInMiB(rows[1][3]) < 0.6);
+	assert.equal(summary[2], rows[1][2]);
+	assert.equal(summary[3], rows[1][3]);
+	assert.equal(results.consoleErrors.length, 0);
+	assert.equal(results.pageErrors.length, 0);
+	await screenshot(page, 'traffic-fixture');
+	await page.unrouteAll({ behavior: 'wait' });
 	await context.close();
 }
 
@@ -118,6 +222,8 @@ async function sensorFixture(browser) {
 	};
 	const context = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 900 } });
 	const page = await context.newPage();
+	let sensorAttempts = 0;
+	watch(page);
 	if (process.env.MONITOR_DEBUG)
 		page.on('request', request => {
 			if (request.method() === 'POST')
@@ -137,8 +243,12 @@ async function sensorFixture(browser) {
 
 		for (const call of sensorCalls) {
 			const item = replies.find(candidate => candidate.id === call.id);
-			if (item)
-				item.result = [ 0, { code: 0, stdout: JSON.stringify(fixture), stderr: '' } ];
+			if (item) {
+				sensorAttempts++;
+				item.result = sensorAttempts < 3
+					? [ 0, { code: 1, stdout: '', stderr: 'temporary failure' } ]
+					: [ 0, { code: 0, stdout: JSON.stringify(fixture), stderr: '' } ];
+			}
 		}
 
 		if (sensorCalls.length)
@@ -149,6 +259,7 @@ async function sensorFixture(browser) {
 
 	await login(page);
 	await page.getByText('coretemp-isa-0000 / Package id 0', { exact: true }).waitFor();
+	assert.equal(sensorAttempts, 3);
 	assert.equal(await page.getByText('42.13 °C', { exact: true }).count(), 1);
 	assert.equal(await page.getByText('39.00 °C', { exact: true }).count(), 1);
 	assert.equal(await page.getByText('55.75 °C', { exact: true }).count(), 1);
@@ -175,7 +286,7 @@ async function soak(browser) {
 	assert.match(summary[1], /^\d+\.\d{2}%$/);
 	assert.match(summary[2], /^\d+\.\d{2} (?:KB|MB|GB)\/s$/);
 	assert.match(summary[3], /^\d+\.\d{2} (?:KB|MB|GB)\/s$/);
-	assert.deepEqual(rows.map(row => row[0]), [ 'lan', 'modem', 'wan', 'wan6' ]);
+	assert.deepEqual(rows.map(row => row[0]), [ 'lan (br-lan)', 'wan (eth4)' ]);
 	for (const row of rows) {
 		assert.match(row[2], /^\d+\.\d{2} (?:KB|MB|GB)\/s$/);
 		assert.match(row[3], /^\d+\.\d{2} (?:KB|MB|GB)\/s$/);
@@ -262,6 +373,7 @@ async function soak(browser) {
 	});
 
 	try {
+		await trafficFixture(browser);
 		await sensorFixture(browser);
 		await smoke(browser, 'en-US', { width: 390, height: 844 }, 'Router Monitor', 'english-mobile');
 		await smoke(browser, 'zh-CN', { width: 1440, height: 1000 }, '监视器', 'chinese-desktop');

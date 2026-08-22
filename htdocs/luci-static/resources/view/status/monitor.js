@@ -55,52 +55,143 @@ function rates(previous, current, key, now) {
 	var elapsed = previous && previous.key == key ? (now - previous.time) / 1000 : 0;
 
 	return {
-		rx: elapsed > 0 && current.rx >= previous.rx ? (current.rx - previous.rx) / elapsed : 0,
-		tx: elapsed > 0 && current.tx >= previous.tx ? (current.tx - previous.tx) / elapsed : 0,
-		sample: { key: key, rx: current.rx, tx: current.tx, time: now }
+		download: elapsed > 0 && current.download >= previous.download
+			? (current.download - previous.download) / elapsed : 0,
+		upload: elapsed > 0 && current.upload >= previous.upload
+			? (current.upload - previous.upload) / elapsed : 0,
+		sample: {
+			key: key,
+			download: current.download,
+			upload: current.upload,
+			time: now
+		}
 	};
 }
 
-function counters(devices, name) {
+function counters(devices, name, reverse) {
 	var stats = devices[name] && devices[name].stats;
 
 	if (!stats)
 		return null;
 
-	return {
-		rx: Math.max(Number(stats.rx_bytes) || 0, 0),
-		tx: Math.max(Number(stats.tx_bytes) || 0, 0)
-	};
+	var rx = Math.max(Number(stats.rx_bytes) || 0, 0),
+	    tx = Math.max(Number(stats.tx_bytes) || 0, 0);
+
+	return reverse
+		? { download: tx, upload: rx }
+		: { download: rx, upload: tx };
 }
 
-function configuredInterfaces(interfaces) {
-	return interfaces.filter(function(info) {
-		return info && typeof(info.interface) == 'string' &&
-			info.interface != 'loopback' && info.dynamic !== true;
-	});
-}
-
-function defaultRouteDevices(interfaces) {
-	var devices = {};
-
-	interfaces.forEach(function(info) {
-		if (!info || info.up !== true || typeof(info.l3_device) != 'string')
-			return;
-
-		if ((Array.isArray(info.route) ? info.route : []).some(function(route) {
+function hasDefaultRoute(info) {
+	return info && info.up === true &&
+		(Array.isArray(info.route) ? info.route : []).some(function(route) {
 			return route && Number(route.mask) == 0 &&
 				(route.target == '0.0.0.0' || route.target == '::');
-		}))
-			devices[info.l3_device] = true;
+		});
+}
+
+function wanNetworkNames() {
+	var zones = uci.sections('firewall', 'zone');
+
+	for (var i = 0; i < zones.length; i++)
+		if (zones[i].name == 'wan')
+			return L.toArray(zones[i].network);
+
+	return [];
+}
+
+function relatedInterface(group, info) {
+	var names = [ info.device, info.l3_device ].filter(function(name) {
+		return typeof(name) == 'string';
 	});
 
-	return Object.keys(devices).sort();
+	return group.members.some(function(member) {
+		return names.indexOf(member.device) != -1 ||
+			names.indexOf(member.l3_device) != -1;
+	});
+}
+
+function lineDefinitions(interfaces) {
+	var byName = {}, groups = {}, groupOrder = [], lines = [];
+
+	interfaces.forEach(function(info) {
+		if (info && typeof(info.interface) == 'string')
+			byName[info.interface] = info;
+	});
+
+	var lan = byName.lan;
+	if (lan) {
+		lines.push({
+			key: 'lan',
+			kind: 'lan',
+			name: 'lan',
+			device: typeof(lan.l3_device) == 'string' ? lan.l3_device : lan.device,
+			connected: lan.up === true,
+			pending: lan.pending === true,
+			uptime: lan.uptime
+		});
+	}
+
+	wanNetworkNames().forEach(function(name) {
+		var info = byName[name];
+
+		if (!info || (uci.get('network', name, 'defaultroute') == '0' && !hasDefaultRoute(info)))
+			return;
+
+		var device = typeof(info.device) == 'string' ? info.device : null,
+		    key = device || '?' + name,
+		    group = groups[key];
+
+		if (!group) {
+			group = groups[key] = { key: key, device: device, members: [], dynamic: [] };
+			groupOrder.push(group);
+		}
+
+		group.members.push(info);
+	});
+
+	interfaces.forEach(function(info) {
+		if (!info || info.dynamic !== true || !hasDefaultRoute(info))
+			return;
+
+		for (var i = 0; i < groupOrder.length; i++) {
+			if (relatedInterface(groupOrder[i], info)) {
+				groupOrder[i].dynamic.push(info);
+				break;
+			}
+		}
+	});
+
+	groupOrder.forEach(function(group) {
+		var active = group.members.filter(hasDefaultRoute)[0] || group.dynamic[0] || null,
+		    display = group.members.filter(hasDefaultRoute)[0];
+
+		if (!display && active)
+			display = group.members.filter(function(info) {
+				return relatedInterface({ members: [ info ] }, active);
+			})[0];
+
+		display = display || group.members[0] || active;
+		lines.push({
+			key: 'wan\u0000' + group.key,
+			kind: 'wan',
+			name: display.interface,
+			device: group.device,
+			connected: active != null,
+			pending: active == null && group.members.some(function(info) {
+				return info.pending === true;
+			}),
+			uptime: active && active.uptime
+		});
+	});
+
+	return lines;
 }
 
 function parseSensors(result) {
 	var data;
 
-	if (!result || typeof(result.stdout) != 'string')
+	if (!result || Number(result.code) != 0 || typeof(result.stdout) != 'string')
 		return null;
 
 	try {
@@ -176,18 +267,23 @@ function formatStartTime(formatter, localtime, uptime) {
 
 return view.extend({
 	load: function() {
-		return Promise.all([ uci.load('system'), loadSnapshot(true) ]);
+		return Promise.all([
+			uci.load('system'),
+			uci.load('network'),
+			uci.load('firewall'),
+			loadSnapshot(true)
+		]);
 	},
 
-	buildInterfaceRows: function(interfaces) {
+	buildInterfaceRows: function(lines) {
 		this.interfaceRows = {};
 
-		dom.content(this.interfaceBody, interfaces.map(L.bind(function(info) {
-			var nodes = {}, name = info.interface;
-			this.interfaceRows[name] = nodes;
+		dom.content(this.interfaceBody, lines.map(L.bind(function(line) {
+			var nodes = {};
+			this.interfaceRows[line.key] = nodes;
 
 			return E('tr', { 'class': 'tr' }, [
-				E('td', { 'class': 'td left', 'data-title': _('Interface Name', 'luci-app-monitor') }, name),
+				valueCell(nodes, 'name', _('Interface Name', 'luci-app-monitor')),
 				valueCell(nodes, 'status', _('Status', 'luci-app-monitor')),
 				valueCell(nodes, 'download', _('Download', 'luci-app-monitor')),
 				valueCell(nodes, 'upload', _('Upload', 'luci-app-monitor')),
@@ -198,15 +294,21 @@ return view.extend({
 		}, this)));
 	},
 
-	updateSensors: function(result, initial) {
+	updateSensors: function(result) {
 		var sensors = parseSensors(result);
 
 		if (sensors == null) {
-			if (initial)
+			this.sensorFailures++;
+			if (this.sensorFailures >= 3)
 				this.pollSensors = false;
+
+			Object.keys(this.sensorNodes).forEach(L.bind(function(key) {
+				this.sensorNodes[key].data = '-';
+			}, this));
 			return;
 		}
 
+		this.sensorFailures = 0;
 		if (!sensors.length)
 			this.pollSensors = false;
 
@@ -225,14 +327,14 @@ return view.extend({
 		}, this));
 	},
 
-	update: function(snapshot, initial) {
+	update: function(snapshot) {
 		var system = snapshot[0],
 		    allInterfaces = Array.isArray(snapshot[1]) ? snapshot[1] : [],
 		    devices = snapshot[2] || {},
 		    cpu = snapshot[3] || {},
-		    interfaces = configuredInterfaces(allInterfaces),
+		    lines = lineDefinitions(allInterfaces),
 		    now = Date.now(),
-		    interfaceKey = JSON.stringify(interfaces.map(function(info) { return info.interface; }));
+		    interfaceKey = JSON.stringify(lines.map(function(line) { return line.key; }));
 
 		this.metricNodes.cpu.data = typeof(cpu.cpuusage) == 'string' ? cpu.cpuusage : '-';
 
@@ -243,57 +345,65 @@ return view.extend({
 
 		if (interfaceKey != this.interfaceKey) {
 			this.interfaceKey = interfaceKey;
-			this.buildInterfaceRows(interfaces);
+			this.buildInterfaceRows(lines);
 		}
 
-		var nextSamples = {};
-		interfaces.forEach(L.bind(function(info) {
-			var nodes = this.interfaceRows[info.interface],
-			    current = info.up === true && typeof(info.l3_device) == 'string'
-					? counters(devices, info.l3_device) : null,
-			    status = info.up === true ? _('Connected', 'luci-app-monitor') :
-					(info.pending === true ? _('Pending', 'luci-app-monitor') :
+		var nextSamples = {}, total = { download: 0, upload: 0 },
+		    totalDevices = [], totalAvailable = true;
+		lines.forEach(L.bind(function(line) {
+			var nodes = this.interfaceRows[line.key],
+			    current = line.connected && line.device
+					? counters(devices, line.device, line.kind == 'lan') : null,
+			    status = line.connected ? _('Connected', 'luci-app-monitor') :
+					(line.pending ? _('Pending', 'luci-app-monitor') :
 						_('Disconnected', 'luci-app-monitor'));
 
+			nodes.name.data = '%s (%s)'.format(line.name, line.device || '-');
 			nodes.status.data = status;
 
 			if (!current) {
-				nodes.download.data = formatBytes(0, true);
-				nodes.upload.data = formatBytes(0, true);
+				nodes.download.data = line.connected ? '-' : formatBytes(0, true);
+				nodes.upload.data = line.connected ? '-' : formatBytes(0, true);
 				nodes.totalDownload.data = '-';
 				nodes.totalUpload.data = '-';
-				nodes.connected.data = '-';
+				nodes.connected.data = line.connected
+					? formatStartTime(this.dateFormatter, system.localtime, line.uptime) : '-';
+
+				if (line.kind == 'wan' && line.connected)
+					totalAvailable = false;
 				return;
 			}
 
-			var lineRates = rates(this.lineSamples[info.interface], current, info.l3_device, now);
-			nextSamples[info.interface] = lineRates.sample;
-			nodes.download.data = formatBytes(lineRates.rx, true);
-			nodes.upload.data = formatBytes(lineRates.tx, true);
-			nodes.totalDownload.data = formatBytes(current.rx, false);
-			nodes.totalUpload.data = formatBytes(current.tx, false);
-			nodes.connected.data = formatStartTime(this.dateFormatter, system.localtime, info.uptime);
+			var lineRates = rates(this.lineSamples[line.key], current, line.device, now);
+			nextSamples[line.key] = lineRates.sample;
+			nodes.download.data = formatBytes(lineRates.download, true);
+			nodes.upload.data = formatBytes(lineRates.upload, true);
+			nodes.totalDownload.data = formatBytes(current.download, false);
+			nodes.totalUpload.data = formatBytes(current.upload, false);
+			nodes.connected.data = formatStartTime(this.dateFormatter, system.localtime, line.uptime);
+
+			if (line.kind == 'wan') {
+				total.download += current.download;
+				total.upload += current.upload;
+				totalDevices.push(line.device);
+			}
 		}, this));
 		this.lineSamples = nextSamples;
 
-		var defaultDevices = defaultRouteDevices(allInterfaces).filter(function(name) {
-			return counters(devices, name) != null;
-		}), total = { rx: 0, tx: 0 };
-		defaultDevices.forEach(function(name) {
-			var current = counters(devices, name);
-			if (current) {
-				total.rx += current.rx;
-				total.tx += current.tx;
-			}
-		});
+		if (totalAvailable) {
+			var totalRates = rates(this.totalSample, total, JSON.stringify(totalDevices), now);
+			this.totalSample = totalRates.sample;
+			this.metricNodes.download.data = formatBytes(totalRates.download, true);
+			this.metricNodes.upload.data = formatBytes(totalRates.upload, true);
+		}
+		else {
+			this.totalSample = null;
+			this.metricNodes.download.data = '-';
+			this.metricNodes.upload.data = '-';
+		}
 
-		var totalRates = rates(this.totalSample, total, JSON.stringify(defaultDevices), now);
-		this.totalSample = totalRates.sample;
-		this.metricNodes.download.data = formatBytes(totalRates.rx, true);
-		this.metricNodes.upload.data = formatBytes(totalRates.tx, true);
-
-		if (initial || this.pollSensors)
-			this.updateSensors(snapshot[4], initial);
+		if (this.pollSensors)
+			this.updateSensors(snapshot[4]);
 	},
 
 	render: function(data) {
@@ -303,6 +413,7 @@ return view.extend({
 		this.lineSamples = {};
 		this.totalSample = null;
 		this.pollSensors = true;
+		this.sensorFailures = 0;
 		this.interfaceKey = null;
 		this.sensorKey = null;
 
@@ -348,10 +459,10 @@ return view.extend({
 			])
 		]);
 
-		this.update(data[1], true);
+		this.update(data[3]);
 		poll.add(L.bind(function() {
 			return loadSnapshot(this.pollSensors).then(L.bind(function(snapshot) {
-				this.update(snapshot, false);
+				this.update(snapshot);
 			}, this));
 		}, this), 5);
 
