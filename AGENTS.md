@@ -17,13 +17,22 @@
   of interface or sensor keys changes. Never replace focused controls.
 - CPU supports multiple cores and follows LuCI's existing CPU usage RPC.
 - Physical memory usage is `(total - free) / total`; swap is excluded.
-- Probe `/usr/sbin/sensors -j -A` through an exact read-only ACL. If the first
-  successful probe contains no temperatures, hide temperature output and stop
-  probing for that browser session.
-- List configured, non-dynamic UCI interfaces except `loopback`. RX is download
-  and TX is upload. Disconnected or pending rows show zero rates and `-` for
-  counters and connection time.
-- Overall traffic deduplicates active default-route L3 devices.
+- Probe `/usr/sbin/sensors -j -A` through an exact read-only ACL. Retry at most
+  three failed probes. If a successful probe contains no temperatures, hide
+  temperature output and stop probing for that browser session.
+- Use the firewall zone named `wan` as the traffic boundary. Include configured
+  zone networks which allow a default route, plus any zone member which owns an
+  active default route. Exclude management-only networks with
+  `defaultroute='0'` unless they actually own an active default route.
+- Account on each eligible network's netifd layer-2 `device`, independent of
+  protocol. Merge configured IPv4/IPv6 networks and dynamic child interfaces
+  which share that device. Display one row per device as `network (device)`.
+- On an upstream device, RX is download to the LAN and TX is upload from the
+  LAN. Overall traffic sums each connected WAN device once. Do not use virtual
+  L3 counters when no reliable underlying device counter is available.
+- Derive row status and connection time from the active default-route logical
+  connection, including an associated dynamic child. Disconnected or pending
+  rows show zero rates and `-` for counters and connection time.
 - Calculate rates from counter deltas and actual elapsed time. A first sample,
   device change, counter reset, or non-positive interval yields zero.
 - Format speed with binary units from `KB/s` through `GB/s`, and totals from
@@ -94,3 +103,16 @@
   zero console errors, zero page errors, preserved focus, and one sensors
   request. Router-side APKs and test artifacts were removed; only the two
   installed plugin packages remain.
+- 2026-08-22: A WAN accounting audit found that `wan`, `wan6`, and `modem` all
+  share layer-2 device `eth4`; active IPv4 `wan` and dynamic IPv6 `wan_6` share
+  `pppoe-wan`; and `modem` explicitly disables its default route. The firewall
+  flowtable contains `br-lan`, `eth4`, and `pppoe-wan`. Over a measured
+  15-second interval, `eth4` RX increased by 412125 bytes while `pppoe-wan` RX
+  increased by only 29808 bytes, proving that the flow-offloaded virtual PPP
+  counter is not a reliable download source. WAN RX/download and TX/upload
+  direction was confirmed against the inverse `br-lan` counter movement.
+- 2026-08-22: WAN accounting correction is locked to one target-router row,
+  `wan (eth4)`, using physical `eth4` counters and logical WAN connection state.
+  Physical totals intentionally include link/protocol overhead and small
+  management, ARP, and DHCP traffic. Router network, firewall, and flow-offload
+  configuration must not be changed by implementation or testing.
