@@ -12,7 +12,7 @@
 
 ## Runtime Contract
 
-- Refresh live data every five seconds through one LuCI `poll.add()` callback.
+- Refresh live data every three seconds through one LuCI `poll.add()` callback.
 - Update existing text nodes in place. Rebuild a table body only when the set
   of interface or sensor keys changes. Never replace focused controls.
 - CPU supports multiple cores and follows LuCI's existing CPU usage RPC.
@@ -22,22 +22,31 @@
   lm-sensors returns code 1 with `{}` when no sensors exist. Retry at most three
   missing, malformed, or non-object results. If a valid result contains no
   temperatures, hide temperature output and stop probing for that session.
-- Use the firewall zone named `wan` as the traffic boundary. Include configured
-  zone networks which allow a default route, plus any zone member which owns an
-  active default route. Exclude management-only networks with
-  `defaultroute='0'` unless they actually own an active default route.
-- Account on each eligible network's netifd layer-2 `device`, independent of
-  protocol. Merge configured IPv4/IPv6 networks and dynamic child interfaces
-  which share that device. Display one row per device as `network (device)`.
-- On an upstream device, RX is download to the LAN and TX is upload from the
-  LAN. Overall traffic sums each connected WAN device once. Do not use virtual
-  L3 counters when no reliable underlying device counter is available.
-- Keep one LAN row backed by `br-lan`. From the LAN user's perspective,
-  `br-lan` TX is download and RX is upload. LAN traffic is not included in the
-  overall WAN download and upload summary.
-- Derive row status and connection time from the active default-route logical
-  connection, including an associated dynamic child. Disconnected or pending
-  rows show zero rates and `-` for counters and connection time.
+- Enumerate every netifd logical interface with a usable `device` or
+  `l3_device`, preferring the layer-2 `device` for accounting. Merge logical
+  names and associated dynamic children which share one accounting device.
+- Add every remaining Linux network device reported by
+  `luci-rpc.getNetworkDevices` when it has byte counters. Exclude only loopback,
+  control interfaces, and unused kernel tunnel placeholders; do not omit an
+  explicitly mapped logical device because of its name.
+- Display one row per accounting device. Logical rows use
+  `network/network6 (device)` and unbound devices use the device name. Table
+  directions are literal RX and TX for every physical, bridge, VLAN, wireless,
+  PPP, and tunnel device; never infer LAN-relative directions for generic rows.
+- Derive a logical row's state and connection time from an active default-route
+  member, then from the first active member. Raw devices use kernel link state
+  and show `-` for connection time. Disconnected rows show zero rates while
+  retaining available boot-session RX and TX totals.
+- Use the firewall zone named `wan` as the overall traffic boundary. Resolve
+  eligible configured networks, netifd interfaces which request that zone at
+  runtime, plus exact and prefix-wildcard raw zone devices. Exclude
+  management-only networks with `defaultroute='0'` unless they own an active
+  default route.
+- Prefer each eligible WAN network's netifd layer-2 `device`; use its
+  `l3_device` only when no lower device is available. If any physical/layer-2
+  WAN candidate exists, do not also sum unresolved point-to-point candidates.
+  Resolve direct upper-device matches through their logical group. Sum each
+  connected WAN device once, with RX as download and TX as upload.
 - Calculate rates from counter deltas and actual elapsed time. A first sample,
   device change, counter reset, or non-positive interval yields zero.
 - Format speed with binary units from `KB/s` through `GB/s`, and totals from
@@ -64,7 +73,7 @@
 - Build the application and Simplified Chinese APK in the ImmortalWrt tree.
 - Install both packages on the supplied router and test the real LuCI page in
   English and Chinese at desktop and mobile sizes.
-- Verify five-second cadence, calculations, focus preservation, stable DOM
+- Verify three-second cadence, calculations, focus preservation, stable DOM
   size, no console errors, and the temperature UI with an intercepted valid
   lm-sensors JSON response.
 - Complete an eight-minute browser soak and record request intervals, DOM size,
@@ -148,3 +157,14 @@
   102 system samples, 4985-5014 ms steady intervals (4999.95 ms average), DOM
   count 163 before/after/maximum, forced-GC heap 2955848 -> 2913020 bytes, zero
   console errors, zero page errors, preserved focus, and one sensors request.
+- 2026-08-22: Generic monitoring work is constrained to existing LuCI RPCs.
+  ImmortalWrt source confirms that `getNetworkDevices` enumerates
+  `/sys/class/net` and reads each device's kernel RX/TX byte counters, so no
+  daemon, backend, dependency, or broader ACL is required. The new acceptance
+  contract covers multiple LANs, multiple physical WANs, unmapped devices,
+  tunnel devices, and a three-second polling interval; verification is pending.
+- 2026-08-22: Firewall4 source confirms that runtime interfaces with
+  `data.zone` are zone members and that `device` is the physical device while
+  `l3_device` is the upper device. Rpcd-mod-luci also exposes the kernel
+  point-to-point flag. WAN selection now follows those fields; deterministic
+  and router verification are pending.

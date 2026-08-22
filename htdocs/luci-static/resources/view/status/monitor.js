@@ -55,31 +55,30 @@ function rates(previous, current, key, now) {
 	var elapsed = previous && previous.key == key ? (now - previous.time) / 1000 : 0;
 
 	return {
-		download: elapsed > 0 && current.download >= previous.download
-			? (current.download - previous.download) / elapsed : 0,
-		upload: elapsed > 0 && current.upload >= previous.upload
-			? (current.upload - previous.upload) / elapsed : 0,
+		rx: elapsed > 0 && current.rx >= previous.rx
+			? (current.rx - previous.rx) / elapsed : 0,
+		tx: elapsed > 0 && current.tx >= previous.tx
+			? (current.tx - previous.tx) / elapsed : 0,
 		sample: {
 			key: key,
-			download: current.download,
-			upload: current.upload,
+			rx: current.rx,
+			tx: current.tx,
 			time: now
 		}
 	};
 }
 
-function counters(devices, name, reverse) {
+function counters(devices, name) {
 	var stats = devices[name] && devices[name].stats;
 
-	if (!stats)
+	if (!stats || stats.rx_bytes == null || stats.tx_bytes == null ||
+		!isFinite(Number(stats.rx_bytes)) || !isFinite(Number(stats.tx_bytes)))
 		return null;
 
-	var rx = Math.max(Number(stats.rx_bytes) || 0, 0),
-	    tx = Math.max(Number(stats.tx_bytes) || 0, 0);
-
-	return reverse
-		? { download: tx, upload: rx }
-		: { download: rx, upload: tx };
+	return {
+		rx: Math.max(Number(stats.rx_bytes), 0),
+		tx: Math.max(Number(stats.tx_bytes), 0)
+	};
 }
 
 function hasDefaultRoute(info) {
@@ -90,102 +89,239 @@ function hasDefaultRoute(info) {
 		});
 }
 
-function wanNetworkNames() {
+function wanZone() {
 	var zones = uci.sections('firewall', 'zone');
 
 	for (var i = 0; i < zones.length; i++)
 		if (zones[i].name == 'wan')
-			return L.toArray(zones[i].network);
+			return zones[i];
 
-	return [];
+	return null;
 }
 
-function relatedInterface(group, info) {
-	var names = [ info.device, info.l3_device ].filter(function(name) {
-		return typeof(name) == 'string';
+function interfaceDevices(info) {
+	var names = [];
+
+	[ info && info.device, info && info.l3_device ].forEach(function(name) {
+		if (typeof(name) == 'string' && names.indexOf(name) == -1)
+			names.push(name);
 	});
 
-	return group.members.some(function(member) {
-		return names.indexOf(member.device) != -1 ||
-			names.indexOf(member.l3_device) != -1;
+	return names;
+}
+
+function accountingDevice(info, devices) {
+	if (typeof(info.device) == 'string' && counters(devices, info.device))
+		return { name: info.device, lower: true };
+
+	if (typeof(info.l3_device) == 'string' && counters(devices, info.l3_device))
+		return { name: info.l3_device, lower: false };
+
+	if (typeof(info.device) == 'string')
+		return { name: info.device, lower: true };
+
+	if (typeof(info.l3_device) == 'string')
+		return { name: info.l3_device, lower: false };
+
+	return null;
+}
+
+function ignoredRawDevice(name) {
+	return name == 'lo' || /^(?:wmaster|wifi|hwsim|imq|ifb)\d+$/.test(name) ||
+		/^mon\.wlan\d+$/.test(name) ||
+		/^(?:sit|gre|gretap|ip6gre|ip6tnl|tunl)0$/.test(name);
+}
+
+function addInterface(group, info) {
+	group.members.push(info);
+	interfaceDevices(info).forEach(function(name) {
+		group.aliases[name] = true;
 	});
 }
 
-function lineDefinitions(interfaces) {
-	var byName = {}, groups = {}, groupOrder = [], lines = [];
+function lineDefinitions(interfaces, devices) {
+	var groups = {}, groupOrder = [], byInterface = {};
 
-	interfaces.forEach(function(info) {
-		if (info && typeof(info.interface) == 'string')
-			byName[info.interface] = info;
-	});
-
-	var lan = byName.lan;
-	if (lan) {
-		lines.push({
-			key: 'lan',
-			kind: 'lan',
-			name: 'lan',
-			device: typeof(lan.l3_device) == 'string' ? lan.l3_device : lan.device,
-			connected: lan.up === true,
-			pending: lan.pending === true,
-			uptime: lan.uptime
-		});
-	}
-
-	wanNetworkNames().forEach(function(name) {
-		var info = byName[name];
-
-		if (!info || (uci.get('network', name, 'defaultroute') == '0' && !hasDefaultRoute(info)))
-			return;
-
-		var device = typeof(info.device) == 'string' ? info.device : null,
-		    key = device || '?' + name,
-		    group = groups[key];
+	function groupFor(choice) {
+		var group = groups[choice.name];
 
 		if (!group) {
-			group = groups[key] = { key: key, device: device, members: [], dynamic: [] };
+			group = groups[choice.name] = {
+				device: choice.name,
+				lower: choice.lower,
+				members: [],
+				aliases: {}
+			};
 			groupOrder.push(group);
 		}
+		else if (choice.lower) {
+			group.lower = true;
+		}
 
-		group.members.push(info);
+		return group;
+	}
+
+	interfaces.forEach(function(info) {
+		if (!info || info.dynamic === true || typeof(info.interface) != 'string')
+			return;
+
+		var choice = accountingDevice(info, devices);
+
+		if (!choice || choice.name == 'lo')
+			return;
+
+		var group = groupFor(choice);
+		addInterface(group, info);
+		byInterface[info.interface] = group;
 	});
 
 	interfaces.forEach(function(info) {
-		if (!info || info.dynamic !== true || !hasDefaultRoute(info))
+		if (!info || info.dynamic !== true || typeof(info.interface) != 'string')
 			return;
 
-		for (var i = 0; i < groupOrder.length; i++) {
-			if (relatedInterface(groupOrder[i], info)) {
-				groupOrder[i].dynamic.push(info);
-				break;
-			}
+		var names = interfaceDevices(info), group = null;
+
+		for (var i = 0; i < groupOrder.length && !group; i++)
+			if (names.some(function(name) { return groupOrder[i].aliases[name]; }))
+				group = groupOrder[i];
+
+		if (!group) {
+			var choice = accountingDevice(info, devices);
+
+			if (!choice || choice.name == 'lo')
+				return;
+
+			group = groupFor(choice);
 		}
+
+		addInterface(group, info);
+		byInterface[info.interface] = group;
 	});
 
-	groupOrder.forEach(function(group) {
-		var active = group.members.filter(hasDefaultRoute)[0] || group.dynamic[0] || null,
-		    display = group.members.filter(hasDefaultRoute)[0];
+	var used = {}, lines = groupOrder.map(function(group) {
+		Object.keys(group.aliases).forEach(function(name) { used[name] = true; });
 
-		if (!display && active)
-			display = group.members.filter(function(info) {
-				return relatedInterface({ members: [ info ] }, active);
-			})[0];
+		var configured = group.members.filter(function(info) { return info.dynamic !== true; }),
+		    names = (configured.length ? configured : group.members).map(function(info) {
+			    return info.interface;
+		    }).filter(function(name, index, all) {
+			    return all.indexOf(name) == index;
+		    }).sort(L.naturalCompare),
+		    active = group.members.filter(hasDefaultRoute)[0] ||
+			    group.members.filter(function(info) { return info.up === true; })[0] || null;
 
-		display = display || group.members[0] || active;
-		lines.push({
-			key: 'wan\u0000' + group.key,
-			kind: 'wan',
-			name: display.interface,
+		return {
+			key: 'line\u0000' + group.device,
+			name: names.join('/'),
 			device: group.device,
 			connected: active != null,
 			pending: active == null && group.members.some(function(info) {
 				return info.pending === true;
 			}),
 			uptime: active && active.uptime
+		};
+	}).sort(function(a, b) {
+		return L.naturalCompare(a.name, b.name) || L.naturalCompare(a.device, b.device);
+	});
+
+	Object.keys(devices).sort(L.naturalCompare).forEach(function(name) {
+		if (used[name] || ignoredRawDevice(name) || !counters(devices, name))
+			return;
+
+		lines.push({
+			key: 'line\u0000' + name,
+			name: name,
+			device: name,
+			connected: devices[name].up === true,
+			pending: false,
+			uptime: null
 		});
 	});
 
-	return lines;
+	return { lines: lines, groups: byInterface };
+}
+
+function matchesDevice(pattern, name) {
+	if (pattern == '+')
+		return true;
+
+	return pattern.slice(-1) == '+'
+		? name.indexOf(pattern.slice(0, -1)) == 0
+		: name == pattern;
+}
+
+function wanDevices(interfaces, devices, groups) {
+	var zone = wanZone(), lower = {}, fallback = {}, zoneNetworks = {}, excludedNetworks = {};
+
+	if (!zone)
+		return { names: [], available: true };
+
+	L.toArray(zone.network).forEach(function(name) {
+		if (typeof(name) != 'string')
+			return;
+
+		(name.charAt(0) == '!' ? excludedNetworks : zoneNetworks)[
+			name.charAt(0) == '!' ? name.slice(1) : name
+		] = true;
+	});
+
+	function addCandidate(group, name) {
+		var target = group ? group.device : name,
+		    pointToPoint = devices[name] && devices[name].flags &&
+			devices[name].flags.pointtopoint === true;
+
+		if (!target || !devices[target] || devices[target].up !== true || !counters(devices, target))
+			return;
+
+		((group ? group.lower : !pointToPoint) ? lower : fallback)[target] = true;
+	}
+
+	interfaces.forEach(function(info) {
+		if (!info || typeof(info.interface) != 'string' || excludedNetworks[info.interface] ||
+			(!zoneNetworks[info.interface] && (!info.data || info.data.zone != zone.name)) ||
+			(uci.get('network', info.interface, 'defaultroute') == '0' && !hasDefaultRoute(info)))
+			return;
+
+		var group = groups[info.interface];
+
+		if (!group || !group.members.some(hasDefaultRoute))
+			return;
+
+		addCandidate(group);
+	});
+
+	var patterns = L.toArray(zone.device).filter(function(pattern) {
+		return typeof(pattern) == 'string';
+	}), positives = patterns.filter(function(pattern) {
+		return pattern != '+' && pattern.charAt(0) != '!';
+	}), negatives = patterns.filter(function(pattern) {
+		return pattern.charAt(0) == '!';
+	}).map(function(pattern) { return pattern.slice(1); });
+
+	Object.keys(devices).forEach(function(name) {
+		if (devices[name].up !== true || !counters(devices, name) ||
+			!positives.some(function(pattern) { return matchesDevice(pattern, name); }) ||
+			negatives.some(function(pattern) { return matchesDevice(pattern, name); }))
+			return;
+
+		var group = null;
+
+		for (var i = 0; i < interfaces.length && !group; i++) {
+			var info = interfaces[i];
+
+			if (info && (info.device == name || info.l3_device == name))
+				group = groups[info.interface];
+		}
+
+		addCandidate(group, name);
+	});
+
+	var names = Object.keys(Object.keys(lower).length ? lower : fallback).sort(L.naturalCompare);
+
+	return {
+		names: names,
+		available: names.every(function(name) { return counters(devices, name) != null; })
+	};
 }
 
 function parseSensors(result) {
@@ -285,10 +421,10 @@ return view.extend({
 			return E('tr', { 'class': 'tr' }, [
 				valueCell(nodes, 'name', _('Interface Name', 'luci-app-monitor')),
 				valueCell(nodes, 'status', _('Status', 'luci-app-monitor')),
-				valueCell(nodes, 'download', _('Download', 'luci-app-monitor')),
-				valueCell(nodes, 'upload', _('Upload', 'luci-app-monitor')),
-				valueCell(nodes, 'totalDownload', _('Total Download', 'luci-app-monitor')),
-				valueCell(nodes, 'totalUpload', _('Total Upload', 'luci-app-monitor')),
+				valueCell(nodes, 'rx', _('RX', 'luci-app-monitor')),
+				valueCell(nodes, 'tx', _('TX', 'luci-app-monitor')),
+				valueCell(nodes, 'totalRx', _('Total RX', 'luci-app-monitor')),
+				valueCell(nodes, 'totalTx', _('Total TX', 'luci-app-monitor')),
 				valueCell(nodes, 'connected', _('Connected Since', 'luci-app-monitor'))
 			]);
 		}, this)));
@@ -332,7 +468,9 @@ return view.extend({
 		    allInterfaces = Array.isArray(snapshot[1]) ? snapshot[1] : [],
 		    devices = snapshot[2] || {},
 		    cpu = snapshot[3] || {},
-		    lines = lineDefinitions(allInterfaces),
+		    definitions = lineDefinitions(allInterfaces, devices),
+		    lines = definitions.lines,
+		    wan = wanDevices(allInterfaces, devices, definitions.groups),
 		    now = Date.now(),
 		    interfaceKey = JSON.stringify(lines.map(function(line) { return line.key; }));
 
@@ -348,53 +486,57 @@ return view.extend({
 			this.buildInterfaceRows(lines);
 		}
 
-		var nextSamples = {}, total = { download: 0, upload: 0 },
-		    totalDevices = [], totalAvailable = true;
+		var nextSamples = {};
 		lines.forEach(L.bind(function(line) {
 			var nodes = this.interfaceRows[line.key],
-			    current = line.connected && line.device
-					? counters(devices, line.device, line.kind == 'lan') : null,
+			    current = line.device ? counters(devices, line.device) : null,
 			    status = line.connected ? _('Connected', 'luci-app-monitor') :
 					(line.pending ? _('Pending', 'luci-app-monitor') :
 						_('Disconnected', 'luci-app-monitor'));
 
-			nodes.name.data = '%s (%s)'.format(line.name, line.device || '-');
+			nodes.name.data = line.name == line.device
+				? line.name : '%s (%s)'.format(line.name, line.device || '-');
 			nodes.status.data = status;
 
 			if (!current) {
-				nodes.download.data = line.connected ? '-' : formatBytes(0, true);
-				nodes.upload.data = line.connected ? '-' : formatBytes(0, true);
-				nodes.totalDownload.data = '-';
-				nodes.totalUpload.data = '-';
+				nodes.rx.data = line.connected ? '-' : formatBytes(0, true);
+				nodes.tx.data = line.connected ? '-' : formatBytes(0, true);
+				nodes.totalRx.data = '-';
+				nodes.totalTx.data = '-';
 				nodes.connected.data = line.connected
 					? formatStartTime(this.dateFormatter, system.localtime, line.uptime) : '-';
-
-				if (line.kind == 'wan' && line.connected)
-					totalAvailable = false;
 				return;
 			}
 
-			var lineRates = rates(this.lineSamples[line.key], current, line.device, now);
-			nextSamples[line.key] = lineRates.sample;
-			nodes.download.data = formatBytes(lineRates.download, true);
-			nodes.upload.data = formatBytes(lineRates.upload, true);
-			nodes.totalDownload.data = formatBytes(current.download, false);
-			nodes.totalUpload.data = formatBytes(current.upload, false);
-			nodes.connected.data = formatStartTime(this.dateFormatter, system.localtime, line.uptime);
+			var lineRates = line.connected
+				? rates(this.lineSamples[line.key], current, line.device, now)
+				: { rx: 0, tx: 0 };
 
-			if (line.kind == 'wan') {
-				total.download += current.download;
-				total.upload += current.upload;
-				totalDevices.push(line.device);
-			}
+			if (line.connected)
+				nextSamples[line.key] = lineRates.sample;
+
+			nodes.rx.data = formatBytes(lineRates.rx, true);
+			nodes.tx.data = formatBytes(lineRates.tx, true);
+			nodes.totalRx.data = formatBytes(current.rx, false);
+			nodes.totalTx.data = formatBytes(current.tx, false);
+			nodes.connected.data = line.connected
+				? formatStartTime(this.dateFormatter, system.localtime, line.uptime) : '-';
 		}, this));
 		this.lineSamples = nextSamples;
 
-		if (totalAvailable) {
-			var totalRates = rates(this.totalSample, total, JSON.stringify(totalDevices), now);
+		if (wan.available) {
+			var total = { rx: 0, tx: 0 };
+
+			wan.names.forEach(function(name) {
+				var current = counters(devices, name);
+				total.rx += current.rx;
+				total.tx += current.tx;
+			});
+
+			var totalRates = rates(this.totalSample, total, JSON.stringify(wan.names), now);
 			this.totalSample = totalRates.sample;
-			this.metricNodes.download.data = formatBytes(totalRates.download, true);
-			this.metricNodes.upload.data = formatBytes(totalRates.upload, true);
+			this.metricNodes.download.data = formatBytes(totalRates.rx, true);
+			this.metricNodes.upload.data = formatBytes(totalRates.tx, true);
 		}
 		else {
 			this.totalSample = null;
@@ -449,10 +591,10 @@ return view.extend({
 				E('thead', {}, E('tr', { 'class': 'tr table-titles' }, [
 					E('th', { 'class': 'th left' }, _('Interface Name', 'luci-app-monitor')),
 					E('th', { 'class': 'th left' }, _('Status', 'luci-app-monitor')),
-					E('th', { 'class': 'th left' }, _('Download', 'luci-app-monitor')),
-					E('th', { 'class': 'th left' }, _('Upload', 'luci-app-monitor')),
-					E('th', { 'class': 'th left' }, _('Total Download', 'luci-app-monitor')),
-					E('th', { 'class': 'th left' }, _('Total Upload', 'luci-app-monitor')),
+					E('th', { 'class': 'th left' }, _('RX', 'luci-app-monitor')),
+					E('th', { 'class': 'th left' }, _('TX', 'luci-app-monitor')),
+					E('th', { 'class': 'th left' }, _('Total RX', 'luci-app-monitor')),
+					E('th', { 'class': 'th left' }, _('Total TX', 'luci-app-monitor')),
 					E('th', { 'class': 'th left' }, _('Connected Since', 'luci-app-monitor'))
 				])),
 				this.interfaceBody
@@ -464,7 +606,7 @@ return view.extend({
 			return loadSnapshot(this.pollSensors).then(L.bind(function(snapshot) {
 				this.update(snapshot);
 			}, this));
-		}, this), 5);
+		}, this), 3);
 
 		return page;
 	},

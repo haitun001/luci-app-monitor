@@ -90,17 +90,21 @@ async function screenshot(page, name) {
 	results.screenshots.push(file);
 }
 
-async function smoke(browser, locale, viewport, expectedTitle, name) {
+async function smoke(browser, locale, viewport, expectedTitle, expectedHeaders, name) {
 	const context = await browser.newContext({ locale, viewport });
 	const page = await context.newPage();
 	watch(page);
 	await login(page);
 	await page.waitForTimeout(6000);
 	assert.equal((await page.locator('h2').innerText()).trim(), expectedTitle);
-	assert.equal(await page.locator('table').nth(1).locator('tbody tr').count(), 2);
-	assert.deepEqual(await page.locator('table').nth(1).locator('tbody tr td:first-child').allTextContents(),
-		[ 'lan (br-lan)', 'wan (eth4)' ]);
-	assert.equal(await page.locator('table').nth(1).locator('tbody tr td[data-title]').count(), 14);
+	const table = page.locator('table').nth(1);
+	const labels = (await table.locator('tbody tr td:first-child').allTextContents()).map(value => value.trim());
+	assert(labels.length > 1);
+	assert.equal(new Set(labels).size, labels.length);
+	assert(labels.some(label => label.includes('(br-lan)')));
+	assert(labels.some(label => label.includes('(eth4)') && /(?:^|\/)wan(?:\/| )/.test(label)));
+	assert.deepEqual((await table.locator('thead th').allTextContents()).map(value => value.trim()), expectedHeaders);
+	assert.equal(await table.locator('tbody tr td[data-title]').count(), labels.length * 7);
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
 	assert.equal(results.consoleErrors.length, 0);
 	assert.equal(results.pageErrors.length, 0);
@@ -118,20 +122,58 @@ async function trafficFixture(browser) {
 	const MiB = 1024 ** 2;
 	const GiB = 1024 ** 3;
 	const interfaces = [
-		{ interface: 'modem', up: true, dynamic: false, uptime: 800, device: 'eth4', l3_device: 'eth4', route: [] },
-		{ interface: 'wan6', up: false, pending: true, dynamic: false, device: 'eth4' },
+		{ interface: 'loopback', up: true, dynamic: false, uptime: 1100, device: 'lo', l3_device: 'lo', route: [] },
+		{ interface: 'downlan', up: false, dynamic: false, device: 'br-down', l3_device: 'br-down', route: [] },
+		{ interface: 'guest', up: true, dynamic: false, uptime: 980, device: 'br-guest', l3_device: 'br-guest', route: [] },
+		{ interface: 'iot', up: true, dynamic: false, uptime: 970, device: 'eth2.100', l3_device: 'eth2.100', route: [] },
 		{ interface: 'lan', up: true, dynamic: false, uptime: 1000, device: 'br-lan', l3_device: 'br-lan', route: [] },
+		{ interface: 'modem', up: true, dynamic: false, uptime: 800, device: 'eth6', l3_device: 'eth6', route: [] },
+		{ interface: 'vpn', up: true, dynamic: false, uptime: 700, device: 'tun0', l3_device: 'tun0', route: [] },
 		{ interface: 'wan', up: true, dynamic: false, uptime: 900, device: 'eth4', l3_device: 'pppoe-wan', route: [
 			{ target: '0.0.0.0', mask: 0 }
 		] },
+		{ interface: 'wan6', up: false, pending: true, dynamic: false, device: 'eth4' },
 		{ interface: 'wan_6', up: true, dynamic: true, uptime: 880, device: 'pppoe-wan', l3_device: 'pppoe-wan',
 			data: { zone: 'wan' }, route: [ { target: '::', mask: 0 } ] },
-		{ interface: 'vpn', up: true, dynamic: true, uptime: 700, device: 'tailscale0', l3_device: 'tailscale0',
-			data: { zone: 'vpn' }, route: [ { target: '0.0.0.0', mask: 0 } ] }
+		{ interface: 'cell_4', up: true, dynamic: true, uptime: 870, device: 'eth7', l3_device: 'qmi-cell',
+			data: { zone: 'wan' }, route: [ { target: '0.0.0.0', mask: 0 } ] },
+		{ interface: 'wan2', up: true, dynamic: false, uptime: 860, device: 'eth5', l3_device: 'eth5',
+			route: [ { target: '0.0.0.0', mask: 0 } ] },
+		{ interface: 'wan2v6', up: true, dynamic: false, uptime: 850, device: 'eth5', l3_device: 'eth5',
+			route: [ { target: '::', mask: 0 } ] },
+		{ interface: 'wgwan', up: true, dynamic: false, uptime: 820, l3_device: 'wg0',
+			route: [ { target: '0.0.0.0', mask: 0 } ] }
+	];
+	const networkValues = Object.fromEntries([
+		'loopback', 'downlan', 'guest', 'iot', 'lan', 'modem', 'vpn',
+		'wan', 'wan6', 'wan2', 'wan2v6', 'wgwan'
+	].map(name => [ name, {
+		'.anonymous': false,
+		'.type': 'interface',
+		'.name': name,
+		proto: name === 'wan' ? 'pppoe' : 'static'
+	} ]));
+	networkValues.modem.defaultroute = '0';
+	const firewallValues = {
+		cfgwan: {
+			'.anonymous': true,
+			'.type': 'zone',
+			'.name': 'cfgwan',
+			name: 'wan',
+			network: [ 'modem', 'wan2', 'wan2v6', 'wgwan' ],
+			device: [ 'pppoe+', 'usb+', 'tun-raw', '!usb9' ]
+		}
+	};
+	const expectedLabels = [
+		'cell_4 (eth7)', 'downlan (br-down)', 'guest (br-guest)', 'iot (eth2.100)', 'lan (br-lan)',
+		'modem (eth6)', 'vpn (tun0)', 'wan/wan6 (eth4)', 'wan2/wan2v6 (eth5)',
+		'wgwan (wg0)', 'gre1', 'lan1', 'lan2', 'tap0', 'tun-raw', 'usb0', 'usb9', 'veth0'
 	];
 	const context = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 900 } });
 	const page = await context.newPage();
 	let sample = -1;
+	let hotplug = false;
+	let resetLan1 = false;
 
 	await page.route('**/ubus/**', async route => {
 		const batch = calls(route.request().postData());
@@ -152,17 +194,52 @@ async function trafficFixture(browser) {
 			const method = call.params?.[2];
 			const n = Math.max(sample, 0);
 
-			if (object === 'network.interface' && method === 'dump') {
+			if (object === 'uci' && method === 'get' && call.params?.[3]?.config === 'network') {
+				item.result = [ 0, { values: networkValues } ];
+				changed = true;
+			}
+			else if (object === 'uci' && method === 'get' && call.params?.[3]?.config === 'firewall') {
+				item.result = [ 0, { values: firewallValues } ];
+				changed = true;
+			}
+			else if (object === 'network.interface' && method === 'dump') {
 				item.result = [ 0, { interface: interfaces } ];
 				changed = true;
 			}
 			else if (object === 'luci-rpc' && method === 'getNetworkDevices') {
-				item.result = [ 0, {
-					'br-lan': { stats: { rx_bytes: 256 * MiB + n * 5 * MiB, tx_bytes: 8 * GiB + n * 20 * MiB } },
-					'eth4': { stats: { rx_bytes: 4 * GiB + n * 10 * MiB, tx_bytes: 512 * MiB + n * 2.5 * MiB } },
-					'pppoe-wan': { stats: { rx_bytes: 64 * GiB + n * 100 * MiB, tx_bytes: 32 * GiB + n * 50 * MiB } },
-					'tailscale0': { stats: { rx_bytes: 128 * GiB + n * GiB, tx_bytes: 128 * GiB + n * GiB } }
-				} ];
+				const deviceData = {
+					'br-down': { up: false, stats: { rx_bytes: 2 * GiB, tx_bytes: 512 * MiB } },
+					'br-guest': { up: true, stats: { rx_bytes: 1 * GiB + n * MiB, tx_bytes: 3 * GiB + n * 4 * MiB } },
+					'br-lan': { up: true, stats: { rx_bytes: 256 * MiB + n * 5 * MiB, tx_bytes: 8 * GiB + n * 20 * MiB } },
+					'eth2.100': { up: true, stats: { rx_bytes: 700 * MiB + n * 2 * MiB, tx_bytes: 900 * MiB + n * 3 * MiB } },
+					'eth4': { up: true, stats: { rx_bytes: 4 * GiB + n * 12 * MiB, tx_bytes: 512 * MiB + n * 3 * MiB } },
+					'eth5': { up: true, stats: { rx_bytes: 6 * GiB + n * 6 * MiB, tx_bytes: 1 * GiB + n * 1.5 * MiB } },
+					'eth6': { up: true, stats: { rx_bytes: 80 * GiB + n * 60 * MiB, tx_bytes: 40 * GiB + n * 30 * MiB } },
+					'eth7': { up: true, stats: { rx_bytes: 2 * GiB + n * 9 * MiB, tx_bytes: 1 * GiB + n * 3 * MiB } },
+					'gre0': { up: false, stats: { rx_bytes: 0, tx_bytes: 0 } },
+					'gre1': { up: true, stats: { rx_bytes: 12 * MiB + n * MiB, tx_bytes: 9 * MiB + n * MiB } },
+					'ifb0': { up: true, stats: { rx_bytes: 90 * GiB, tx_bytes: 90 * GiB } },
+					'lan1': { up: true, stats: resetLan1
+						? { rx_bytes: 2 * MiB, tx_bytes: MiB }
+						: { rx_bytes: GiB + n * 2 * MiB, tx_bytes: 2 * GiB + n * MiB } },
+					'lan2': { up: false, stats: { rx_bytes: 300 * MiB, tx_bytes: 600 * MiB } },
+					'lo': { up: true, stats: { rx_bytes: 200 * GiB, tx_bytes: 200 * GiB } },
+					'mon.wlan0': { up: true, stats: { rx_bytes: 90 * GiB, tx_bytes: 90 * GiB } },
+					'pppoe-wan': { up: true, stats: { rx_bytes: 64 * GiB + n * 100 * MiB, tx_bytes: 32 * GiB + n * 50 * MiB } },
+					'sit0': { up: false, stats: { rx_bytes: 0, tx_bytes: 0 } },
+					'tap0': { up: true, stats: { rx_bytes: 20 * MiB + n * MiB, tx_bytes: 30 * MiB + n * MiB } },
+					'tun0': { up: true, stats: { rx_bytes: 5 * GiB + n * 9 * MiB, tx_bytes: 2 * GiB + n * 6 * MiB } },
+					'tun-raw': { up: true, flags: { pointtopoint: true },
+						stats: { rx_bytes: 9 * GiB + n * 90 * MiB, tx_bytes: 8 * GiB + n * 45 * MiB } },
+					'usb0': { up: true, stats: { rx_bytes: 3 * GiB + n * 3 * MiB, tx_bytes: 600 * MiB + n * 0.75 * MiB } },
+					'usb9': { up: true, stats: { rx_bytes: 70 * GiB + n * 70 * MiB, tx_bytes: 60 * GiB + n * 60 * MiB } },
+					'veth0': { up: true, stats: { rx_bytes: 40 * MiB + n * MiB, tx_bytes: 50 * MiB + n * MiB } },
+					'wg0': { up: true, devtype: 'wireguard', stats: { rx_bytes: 100 * GiB + n * 90 * MiB, tx_bytes: 50 * GiB + n * 45 * MiB } },
+					'wifi0': { up: true, stats: { rx_bytes: 90 * GiB, tx_bytes: 90 * GiB } }
+				};
+				if (hotplug)
+					deviceData['tun-hot'] = { up: true, stats: { rx_bytes: n * MiB, tx_bytes: n * MiB } };
+				item.result = [ 0, deviceData ];
 				changed = true;
 			}
 			else if (object === 'system' && method === 'info') {
@@ -187,25 +264,56 @@ async function trafficFixture(browser) {
 
 	watch(page);
 	await login(page);
-	await page.waitForTimeout(6200);
+	await page.waitForTimeout(6500);
 	const tables = page.locator('table');
 	const summary = (await tables.nth(0).locator('tbody tr td:last-child').allTextContents()).map(value => value.trim());
 	const rows = await tables.nth(1).locator('tbody tr').evaluateAll(items => items.map(row =>
 		Array.from(row.cells, cell => cell.textContent.trim())));
 	const n = sample;
+	const byLabel = Object.fromEntries(rows.map(row => [ row[0], row ]));
 
-	assert.deepEqual(rows.map(row => row[0]), [ 'lan (br-lan)', 'wan (eth4)' ]);
-	assert.deepEqual(rows.map(row => row[1]), [ 'Connected', 'Connected' ]);
-	assert.equal(rows[0][4], `${(8 + n * 20 / 1024).toFixed(2)} GB`);
-	assert.equal(rows[0][5], `${(256 + n * 5).toFixed(2)} MB`);
-	assert.equal(rows[1][4], `${(4 + n * 10 / 1024).toFixed(2)} GB`);
-	assert.equal(rows[1][5], `${(512 + n * 2.5).toFixed(2)} MB`);
-	assert(rateInMiB(rows[0][2]) > 3.2 && rateInMiB(rows[0][2]) < 4.8);
-	assert(rateInMiB(rows[0][3]) > 0.8 && rateInMiB(rows[0][3]) < 1.2);
-	assert(rateInMiB(rows[1][2]) > 1.6 && rateInMiB(rows[1][2]) < 2.4);
-	assert(rateInMiB(rows[1][3]) > 0.4 && rateInMiB(rows[1][3]) < 0.6);
-	assert.equal(summary[2], rows[1][2]);
-	assert.equal(summary[3], rows[1][3]);
+	assert.deepEqual(rows.map(row => row[0]), expectedLabels);
+	assert.equal(byLabel['downlan (br-down)'][1], 'Disconnected');
+	assert.equal(byLabel['downlan (br-down)'][2], '0.00 KB/s');
+	assert.equal(byLabel['downlan (br-down)'][4], '2.00 GB');
+	assert.equal(byLabel['downlan (br-down)'][5], '512.00 MB');
+	assert.equal(byLabel['downlan (br-down)'][6], '-');
+	assert.equal(byLabel['lan2'][1], 'Disconnected');
+	assert.equal(byLabel['lan2'][4], '300.00 MB');
+	assert.equal(byLabel['wan/wan6 (eth4)'][4], `${(4 + n * 12 / 1024).toFixed(2)} GB`);
+	assert.equal(byLabel['wan/wan6 (eth4)'][5], `${(512 + n * 3).toFixed(2)} MB`);
+	assert(rateInMiB(byLabel['wan/wan6 (eth4)'][2]) > 3.7 && rateInMiB(byLabel['wan/wan6 (eth4)'][2]) < 4.3);
+	assert(rateInMiB(byLabel['wan/wan6 (eth4)'][3]) > 0.8 && rateInMiB(byLabel['wan/wan6 (eth4)'][3]) < 1.2);
+	assert(rateInMiB(byLabel['wan2/wan2v6 (eth5)'][2]) > 1.7 && rateInMiB(byLabel['wan2/wan2v6 (eth5)'][2]) < 2.3);
+	assert(rateInMiB(byLabel['usb0'][2]) > 0.8 && rateInMiB(byLabel['usb0'][2]) < 1.2);
+	assert(rateInMiB(byLabel['wgwan (wg0)'][2]) > 25);
+	assert(rateInMiB(byLabel['modem (eth6)'][2]) > 15);
+	assert(rateInMiB(byLabel['tun-raw'][2]) > 25);
+	assert(rateInMiB(summary[2]) > 9.5 && rateInMiB(summary[2]) < 10.5);
+	assert(rateInMiB(summary[3]) > 2.5 && rateInMiB(summary[3]) < 3.0);
+	assert.equal(byLabel['usb0'][6], '-');
+	assert.equal(rows.some(row => row[0] === 'pppoe-wan'), false);
+	for (const ignored of [ 'lo', 'gre0', 'ifb0', 'mon.wlan0', 'sit0', 'wifi0' ])
+		assert.equal(rows.some(row => row[0] === ignored), false);
+
+	const focusTarget = page.locator('a:visible').first();
+	await focusTarget.focus();
+	const focusHandle = await focusTarget.elementHandle();
+	await page.evaluate(element => { window.__fixtureFocus = element; }, focusHandle);
+	hotplug = true;
+	await page.waitForTimeout(3500);
+	await page.getByText('tun-hot', { exact: true }).waitFor();
+	assert.equal(await page.evaluate(() => document.activeElement === window.__fixtureFocus), true);
+	hotplug = false;
+	await page.waitForTimeout(3500);
+	assert.equal(await page.getByText('tun-hot', { exact: true }).count(), 0);
+	assert.equal(await page.evaluate(() => document.activeElement === window.__fixtureFocus), true);
+	resetLan1 = true;
+	await page.waitForTimeout(3500);
+	const resetRow = await tables.nth(1).locator('tbody tr').filter({ hasText: /^lan1/ }).evaluate(row =>
+		Array.from(row.cells, cell => cell.textContent.trim()));
+	assert.equal(resetRow[2], '0.00 KB/s');
+	assert.equal(resetRow[3], '0.00 KB/s');
 	assert.equal(results.consoleErrors.length, 0);
 	assert.equal(results.pageErrors.length, 0);
 	await screenshot(page, 'traffic-fixture');
@@ -287,10 +395,15 @@ async function soak(browser) {
 	assert.match(summary[1], /^\d+\.\d{2}%$/);
 	assert.match(summary[2], /^\d+\.\d{2} (?:KB|MB|GB)\/s$/);
 	assert.match(summary[3], /^\d+\.\d{2} (?:KB|MB|GB)\/s$/);
-	assert.deepEqual(rows.map(row => row[0]), [ 'lan (br-lan)', 'wan (eth4)' ]);
+	assert(rows.length > 1);
+	assert.equal(new Set(rows.map(row => row[0])).size, rows.length);
+	assert(rows.some(row => row[0].includes('(br-lan)')));
+	assert(rows.some(row => row[0].includes('(eth4)') && /(?:^|\/)wan(?:\/| )/.test(row[0])));
 	for (const row of rows) {
-		assert.match(row[2], /^\d+\.\d{2} (?:KB|MB|GB)\/s$/);
-		assert.match(row[3], /^\d+\.\d{2} (?:KB|MB|GB)\/s$/);
+		assert.match(row[2], /^(?:\d+\.\d{2} (?:KB|MB|GB)\/s|-)$/);
+		assert.match(row[3], /^(?:\d+\.\d{2} (?:KB|MB|GB)\/s|-)$/);
+		assert.match(row[4], /^(?:\d+\.\d{2} (?:KB|MB|GB|TB)|-)$/);
+		assert.match(row[5], /^(?:\d+\.\d{2} (?:KB|MB|GB|TB)|-)$/);
 	}
 	assert.equal(await tables.nth(0).locator('tbody tr').count(), 4);
 	assert.equal(observed.sensorRequests.length, 1);
@@ -339,12 +452,15 @@ async function soak(browser) {
 	await cdp.send('HeapProfiler.collectGarbage');
 	const heapAfter = (await cdp.send('Runtime.getHeapUsage')).usedSize;
 	const intervals = observed.polls.slice(1).map((time, index) => time - observed.polls[index]);
-	const steadyIntervals = intervals.filter(interval => interval >= 3000);
+	const steadyIntervals = intervals.filter(interval => interval >= 2000);
+	const intervalAverage = steadyIntervals.reduce((sum, value) => sum + value, 0) / steadyIntervals.length;
 
-	assert(steadyIntervals.length >= Math.max(2, Math.floor(soakMinutes * 10)));
-	assert(steadyIntervals.every(interval => interval >= 4000 && interval <= 6500));
+	assert(steadyIntervals.length >= Math.max(2, Math.floor(soakMinutes * 18)));
+	assert(steadyIntervals.every(interval => interval >= 2500 && interval <= 4500));
+	assert(intervalAverage >= 2900 && intervalAverage <= 3100);
 	assert.equal(maxDom, domBefore);
 	assert.equal(await page.locator('*').count(), domBefore);
+	assert(heapAfter - heapBefore <= 1024 ** 2);
 	assert.equal(results.consoleErrors.length, 0);
 	assert.equal(results.pageErrors.length, 0);
 
@@ -358,7 +474,7 @@ async function soak(browser) {
 		pollCount: observed.polls.length,
 		pollIntervalMin: Math.min(...steadyIntervals),
 		pollIntervalMax: Math.max(...steadyIntervals),
-		pollIntervalAverage: steadyIntervals.reduce((sum, value) => sum + value, 0) / steadyIntervals.length,
+		pollIntervalAverage: intervalAverage,
 		focusPreserved: true,
 		sensorRequests: observed.sensorRequests.length
 	});
@@ -376,9 +492,15 @@ async function soak(browser) {
 	try {
 		await trafficFixture(browser);
 		await sensorFixture(browser);
-		await smoke(browser, 'en-US', { width: 390, height: 844 }, 'Router Monitor', 'english-mobile');
-		await smoke(browser, 'zh-CN', { width: 1440, height: 1000 }, '监视器', 'chinese-desktop');
-		await smoke(browser, 'zh-CN', { width: 390, height: 844 }, '监视器', 'chinese-mobile');
+		await smoke(browser, 'en-US', { width: 390, height: 844 }, 'Router Monitor',
+			[ 'Interface Name', 'Status', 'RX', 'TX', 'Total RX', 'Total TX', 'Connected Since' ],
+			'english-mobile');
+		await smoke(browser, 'zh-CN', { width: 1440, height: 1000 }, '监视器',
+			[ '线路名称', '状态', '接收 (RX)', '发送 (TX)', '累计接收', '累计发送', '连接时间' ],
+			'chinese-desktop');
+		await smoke(browser, 'zh-CN', { width: 390, height: 844 }, '监视器',
+			[ '线路名称', '状态', '接收 (RX)', '发送 (TX)', '累计接收', '累计发送', '连接时间' ],
+			'chinese-mobile');
 		await soak(browser);
 	}
 	finally {
