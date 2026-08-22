@@ -1,0 +1,13 @@
+{
+	"admin/status/monitor": {
+		"title": "Router Monitor",
+		"order": 90,
+		"action": {
+			"type": "view",
+			"path": "status/monitor"
+		},
+		"depends": {
+			"acl": [ "luci-app-monitor" ]
+		}
+	}
+}

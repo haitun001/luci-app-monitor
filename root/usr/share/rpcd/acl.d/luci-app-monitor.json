@@ -1,0 +1,18 @@
+{
+	"luci-app-monitor": {
+		"description": "Grant read access to LuCI Monitor",
+		"read": {
+			"file": {
+				"/usr/sbin/sensors -j -A": [ "exec" ]
+			},
+			"ubus": {
+				"file": [ "exec" ],
+				"luci": [ "getCPUUsage" ],
+				"luci-rpc": [ "getNetworkDevices" ],
+				"network.interface": [ "dump" ],
+				"system": [ "info" ]
+			},
+			"uci": [ "system" ]
+		}
+	}
+}

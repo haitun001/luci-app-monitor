@@ -1,0 +1,64 @@
+msgid ""
+msgstr ""
+"Language: zh_Hans\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgctxt "luci-app-monitor"
+msgid "Connected"
+msgstr "已连接"
+
+msgctxt "luci-app-monitor"
+msgid "Connected Since"
+msgstr "连接时间"
+
+msgctxt "luci-app-monitor"
+msgid "CPU Usage"
+msgstr "CPU 使用率"
+
+msgctxt "luci-app-monitor"
+msgid "Disconnected"
+msgstr "未连接"
+
+msgctxt "luci-app-monitor"
+msgid "Download"
+msgstr "下载"
+
+msgid "Grant read access to LuCI Monitor"
+msgstr "授予 LuCI 监视器只读访问权限"
+
+msgctxt "luci-app-monitor"
+msgid "Interface Name"
+msgstr "线路名称"
+
+msgctxt "luci-app-monitor"
+msgid "Interfaces"
+msgstr "线路"
+
+msgctxt "luci-app-monitor"
+msgid "Memory Usage"
+msgstr "内存使用率"
+
+msgid "Router Monitor"
+msgstr "监视器"
+
+msgctxt "luci-app-monitor"
+msgid "Pending"
+msgstr "连接中"
+
+msgctxt "luci-app-monitor"
+msgid "Status"
+msgstr "状态"
+
+msgctxt "luci-app-monitor"
+msgid "Total Download"
+msgstr "累计下载"
+
+msgctxt "luci-app-monitor"
+msgid "Total Upload"
+msgstr "累计上传"
+
+msgctxt "luci-app-monitor"
+msgid "Upload"
+msgstr "上传"

@@ -1,0 +1,85 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8"
+
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:325
+msgctxt "luci-app-monitor"
+msgid "CPU Usage"
+msgstr ""
+
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:254
+msgctxt "luci-app-monitor"
+msgid "Connected"
+msgstr ""
+
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:196
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:345
+msgctxt "luci-app-monitor"
+msgid "Connected Since"
+msgstr ""
+
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:256
+msgctxt "luci-app-monitor"
+msgid "Disconnected"
+msgstr ""
+
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:192
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:327
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:341
+msgctxt "luci-app-monitor"
+msgid "Download"
+msgstr ""
+
+#: luci-app-monitor/root/usr/share/rpcd/acl.d/luci-app-monitor.json:3
+msgid "Grant read access to LuCI Monitor"
+msgstr ""
+
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:190
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:339
+msgctxt "luci-app-monitor"
+msgid "Interface Name"
+msgstr ""
+
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:336
+msgctxt "luci-app-monitor"
+msgid "Interfaces"
+msgstr ""
+
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:326
+msgctxt "luci-app-monitor"
+msgid "Memory Usage"
+msgstr ""
+
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:255
+msgctxt "luci-app-monitor"
+msgid "Pending"
+msgstr ""
+
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:334
+#: luci-app-monitor/root/usr/share/luci/menu.d/luci-app-monitor.json:3
+msgid "Router Monitor"
+msgstr ""
+
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:191
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:340
+msgctxt "luci-app-monitor"
+msgid "Status"
+msgstr ""
+
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:194
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:343
+msgctxt "luci-app-monitor"
+msgid "Total Download"
+msgstr ""
+
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:195
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:344
+msgctxt "luci-app-monitor"
+msgid "Total Upload"
+msgstr ""
+
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:193
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:328
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:342
+msgctxt "luci-app-monitor"
+msgid "Upload"
+msgstr ""

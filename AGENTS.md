@@ -60,4 +60,37 @@
 ## Progress
 
 - 2026-08-22: Contract created before implementation. Runtime behavior and
-  acceptance criteria are locked; implementation and verification are pending.
+  acceptance criteria are locked.
+- 2026-08-22: Verified on the target router that configured rows are `lan`,
+  `modem`, `wan`, and `wan6`; current IPv4 and dynamic IPv6 default routes both
+  use `pppoe-wan`; device counters are under `getNetworkDevices.*.stats`; CPU
+  usage is returned by `luci.getCPUUsage`; timezone is `Asia/Shanghai`; and
+  `sensors -j -A` returns valid empty JSON with no detected sensors.
+- 2026-08-22: Minimal LuCI view, menu, read-only ACL, and English/Simplified
+  Chinese catalogs implemented. JavaScript syntax, JSON parsing, whitespace,
+  gettext validation, and LuCI i18n extraction pass.
+- 2026-08-22: The first package build proved that a standalone package reached
+  through a workspace symlink cannot resolve `../../luci.mk`; the Makefile now
+  uses the position-independent `$(TOPDIR)/feeds/luci/luci.mk` include. No
+  plugin source was compiled in that failed attempt.
+- 2026-08-22: Package-level ImmortalWrt builds produce the main noarch APK and
+  `luci-i18n-monitor-zh-cn`. Package contents are limited to the view, menu,
+  read-only ACL, translation registration, LMO, and package metadata. The
+  temporary source symlink is removed and the build tree retains exactly its
+  four pre-existing Git status entries.
+- 2026-08-22: The exact built files were installed on the target router and
+  verified by SHA-256. The sensors command is allowed only as
+  `/usr/sbin/sensors -j -A`; an authenticated `/bin/echo` file-exec request is
+  denied. With the router's real empty sensors JSON, the page probes once and
+  stops. An intercepted lm-sensors JSON fixture renders three named values at
+  `42.13`, `39.00`, and `55.75` degrees C.
+- 2026-08-22: Real Chrome checks pass in English and Simplified Chinese at
+  1440x1000 and 390x844. The page shows `lan`, `modem`, `wan`, and `wan6`, has
+  responsive mobile column labels, has no horizontal overflow or overlap, and
+  preserves keyboard focus across refreshes.
+- 2026-08-22: The final installed runtime passed a continuous 30-minute soak:
+  366 system samples, 4973-5014 ms steady intervals (4999.98 ms average), DOM
+  count 179 before/after/maximum, forced-GC heap 2923188 -> 2885548 bytes,
+  zero console errors, zero page errors, preserved focus, and one sensors
+  request. Router-side APKs and test artifacts were removed; only the two
+  installed plugin packages remain.
