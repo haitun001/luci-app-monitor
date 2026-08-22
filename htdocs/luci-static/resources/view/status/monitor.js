@@ -387,7 +387,7 @@ function valueRow(label, nodes, key) {
 }
 
 function formatStartTime(formatter, localtime, uptime) {
-	if (!formatter || !(Number(localtime) > 0) || !(Number(uptime) >= 0))
+	if (!formatter || uptime == null || !(Number(localtime) > 0) || !(Number(uptime) >= 0))
 		return '-';
 
 	var parts = {}, date = new Date((Number(localtime) - Number(uptime)) * 1000);

@@ -168,3 +168,6 @@
   `l3_device` is the upper device. Rpcd-mod-luci also exposes the kernel
   point-to-point flag. WAN selection now follows those fields; deterministic
   and router verification are pending.
+- 2026-08-22: The first generic-device browser fixture exposed JavaScript
+  coercing a raw device's null uptime to zero and rendering a false connection
+  timestamp. The shared formatter now rejects null uptime; retest is pending.
