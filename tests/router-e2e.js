@@ -192,13 +192,14 @@ async function trafficFixture(browser) {
 	const summary = (await tables.nth(0).locator('tbody tr td:last-child').allTextContents()).map(value => value.trim());
 	const rows = await tables.nth(1).locator('tbody tr').evaluateAll(items => items.map(row =>
 		Array.from(row.cells, cell => cell.textContent.trim())));
+	const n = sample;
 
 	assert.deepEqual(rows.map(row => row[0]), [ 'lan (br-lan)', 'wan (eth4)' ]);
 	assert.deepEqual(rows.map(row => row[1]), [ 'Connected', 'Connected' ]);
-	assert.equal(rows[0][4], '8.02 GB');
-	assert.equal(rows[0][5], '261.00 MB');
-	assert.equal(rows[1][4], '4.01 GB');
-	assert.equal(rows[1][5], '514.50 MB');
+	assert.equal(rows[0][4], `${(8 + n * 20 / 1024).toFixed(2)} GB`);
+	assert.equal(rows[0][5], `${(256 + n * 5).toFixed(2)} MB`);
+	assert.equal(rows[1][4], `${(4 + n * 10 / 1024).toFixed(2)} GB`);
+	assert.equal(rows[1][5], `${(512 + n * 2.5).toFixed(2)} MB`);
 	assert(rateInMiB(rows[0][2]) > 3.2 && rateInMiB(rows[0][2]) < 4.8);
 	assert(rateInMiB(rows[0][3]) > 0.8 && rateInMiB(rows[0][3]) < 1.2);
 	assert(rateInMiB(rows[1][2]) > 1.6 && rateInMiB(rows[1][2]) < 2.4);
@@ -247,7 +248,7 @@ async function sensorFixture(browser) {
 				sensorAttempts++;
 				item.result = sensorAttempts < 3
 					? [ 0, { code: 1, stdout: '', stderr: 'temporary failure' } ]
-					: [ 0, { code: 0, stdout: JSON.stringify(fixture), stderr: '' } ];
+					: [ 0, { code: 1, stdout: JSON.stringify(fixture), stderr: '' } ];
 			}
 		}
 

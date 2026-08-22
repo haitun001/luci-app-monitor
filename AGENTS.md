@@ -17,9 +17,11 @@
   of interface or sensor keys changes. Never replace focused controls.
 - CPU supports multiple cores and follows LuCI's existing CPU usage RPC.
 - Physical memory usage is `(total - free) / total`; swap is excluded.
-- Probe `/usr/sbin/sensors -j -A` through an exact read-only ACL. Retry at most
-  three failed probes. If a successful probe contains no temperatures, hide
-  temperature output and stop probing for that browser session.
+- Probe `/usr/sbin/sensors -j -A` through an exact read-only ACL. Treat a valid
+  top-level JSON object as a probe result regardless of command exit status;
+  lm-sensors returns code 1 with `{}` when no sensors exist. Retry at most three
+  missing, malformed, or non-object results. If a valid result contains no
+  temperatures, hide temperature output and stop probing for that session.
 - Use the firewall zone named `wan` as the traffic boundary. Include configured
   zone networks which allow a default route, plus any zone member which owns an
   active default route. Exclude management-only networks with
@@ -126,6 +128,8 @@
   are implemented pending package and router verification. The fixture gives
   `eth4`, `pppoe-wan`, and an unrelated default-route VPN deliberately divergent
   counters, checks inverse LAN bridge direction, and requires the overall rate
-  to equal the single deduplicated WAN row. Sensor probing now treats a nonzero
-  command exit as failure and is covered by two failed probes followed by a
-  successful third probe.
+  to equal the single deduplicated WAN row. Sensor retry behavior is covered by
+  two malformed results followed by valid JSON on the third probe.
+- 2026-08-22: Direct authenticated RPC inspection showed that the target
+  router's empty sensors result is `{}` on stdout with command exit code 1.
+  Sensor validity is therefore determined by parsed JSON shape, not exit code.

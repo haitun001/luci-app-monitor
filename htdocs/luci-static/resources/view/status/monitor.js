@@ -191,7 +191,7 @@ function lineDefinitions(interfaces) {
 function parseSensors(result) {
 	var data;
 
-	if (!result || Number(result.code) != 0 || typeof(result.stdout) != 'string')
+	if (!result || typeof(result.stdout) != 'string')
 		return null;
 
 	try {
