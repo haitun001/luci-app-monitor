@@ -170,4 +170,26 @@
   and router verification are pending.
 - 2026-08-22: The first generic-device browser fixture exposed JavaScript
   coercing a raw device's null uptime to zero and rendering a false connection
-  timestamp. The shared formatter now rejects null uptime; retest is pending.
+  timestamp. The shared formatter rejects null uptime; the completed retest is
+  recorded below.
+- 2026-08-22: The rebuilt `40170e1` main APK and unchanged `62cdf0b` Simplified
+  Chinese APK pass apk signature verification against the build key. The main
+  package was installed on the target router; its view, menu, and ACL hashes
+  match the package manifest, while the installed Chinese LMO matches the
+  unchanged translation package.
+- 2026-08-22: Deterministic browser verification passes with 18 simultaneous
+  rows covering multiple WANs and LANs, bridges, physical ports, VLAN, PPP,
+  WireGuard, TUN, TAP, GRE, USB, VETH, disconnected devices, hotplug removal and
+  insertion, shared-device deduplication, divergent WAN counters, and a counter
+  reset. Missing raw-device uptime renders `-`, and focus survives row changes.
+- 2026-08-22: English and Simplified Chinese screenshots at 1440/1280 desktop
+  and 390-pixel mobile widths, including traffic and temperature fixtures, were
+  visually inspected with no overflow, overlap, truncation, or field mismatch.
+- 2026-08-22: The installed `40170e1` runtime passed a continuous eight-minute
+  soak: 169 system samples, 2985-3015 ms steady intervals (3000 ms average), DOM
+  count 211 before/after/maximum, forced-GC heap 2577788 -> 2542772 bytes, zero
+  console errors, zero page errors, preserved focus, and one sensors request.
+- 2026-08-22: Final cleanup removed router-side APKs, local screenshots and
+  results, built APKs, package build/staging metadata, and the temporary source
+  symlink. The router retains only the installed main and Chinese packages, and
+  the ImmortalWrt tree retains exactly its four pre-existing Git status entries.
