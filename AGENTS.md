@@ -133,3 +133,18 @@
 - 2026-08-22: Direct authenticated RPC inspection showed that the target
   router's empty sensors result is `{}` on stdout with command exit code 1.
   Sensor validity is therefore determined by parsed JSON shape, not exit code.
+- 2026-08-22: The corrected runtime passed deterministic browser fixtures.
+  Deliberately divergent `br-lan`, `eth4`, `pppoe-wan`, and unrelated VPN
+  counters produced only `lan (br-lan)` and `wan (eth4)`; LAN directions were
+  reversed, WAN RX/download and TX/upload were exact, and the summary equaled
+  the deduplicated WAN row. Two malformed sensor responses were retried and a
+  third valid response with exit code 1 rendered all three temperatures.
+- 2026-08-22: English and Simplified Chinese checks pass at 1440x1000 and
+  390x844. All six screenshots, including traffic and sensor fixtures, were
+  visually checked with no overflow, overlap, truncation, or table misalignment.
+  The exact sensors command is allowed, `/bin/echo` file execution is denied,
+  and the real empty sensors response causes exactly one request.
+- 2026-08-22: The corrected runtime passed a continuous eight-minute soak:
+  102 system samples, 4985-5014 ms steady intervals (4999.95 ms average), DOM
+  count 163 before/after/maximum, forced-GC heap 2955848 -> 2913020 bytes, zero
+  console errors, zero page errors, preserved focus, and one sensors request.
