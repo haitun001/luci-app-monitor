@@ -30,6 +30,9 @@
 - On an upstream device, RX is download to the LAN and TX is upload from the
   LAN. Overall traffic sums each connected WAN device once. Do not use virtual
   L3 counters when no reliable underlying device counter is available.
+- Keep one LAN row backed by `br-lan`. From the LAN user's perspective,
+  `br-lan` TX is download and RX is upload. LAN traffic is not included in the
+  overall WAN download and upload summary.
 - Derive row status and connection time from the active default-route logical
   connection, including an associated dynamic child. Disconnected or pending
   rows show zero rates and `-` for counters and connection time.
@@ -62,8 +65,9 @@
 - Verify five-second cadence, calculations, focus preservation, stable DOM
   size, no console errors, and the temperature UI with an intercepted valid
   lm-sensors JSON response.
-- Complete a 30-minute browser soak and record request intervals, DOM size,
-  console errors, and forced-GC heap before and after.
+- Complete an eight-minute browser soak and record request intervals, DOM size,
+  console errors, and forced-GC heap before and after. Run a 30-minute soak only
+  when the user explicitly requests that duration.
 - Remove router-side APKs and test artifacts; leave only installed packages.
 
 ## Progress
@@ -111,8 +115,10 @@
   increased by only 29808 bytes, proving that the flow-offloaded virtual PPP
   counter is not a reliable download source. WAN RX/download and TX/upload
   direction was confirmed against the inverse `br-lan` counter movement.
-- 2026-08-22: WAN accounting correction is locked to one target-router row,
-  `wan (eth4)`, using physical `eth4` counters and logical WAN connection state.
-  Physical totals intentionally include link/protocol overhead and small
-  management, ARP, and DHCP traffic. Router network, firewall, and flow-offload
-  configuration must not be changed by implementation or testing.
+- 2026-08-22: WAN accounting correction is locked to `wan (eth4)`, using
+  physical `eth4` counters and logical WAN connection state. The table also
+  retains `lan (br-lan)`, with TX/download and RX/upload direction. Physical
+  totals intentionally include link/protocol overhead and small management,
+  ARP, and DHCP traffic. Router network, firewall, and flow-offload
+  configuration must not be changed by implementation or testing. Routine
+  soak verification is eight minutes; 30 minutes requires an explicit request.
