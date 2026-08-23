@@ -76,7 +76,7 @@
 
 ## Release Contract
 
-- The initial public release is `v0.1`. The next release is `v0.2`; both
+- The initial public release is `v0.1`. The current release is `v0.2`; both
   `luci-app-monitor` and `luci-i18n-monitor-zh-cn` use package version
   `0.2-r1`.
 - Publish under Apache License 2.0 at
@@ -336,3 +336,22 @@
   concurrent `system.info` requests because LuCI's global status request can
   interleave; the interval fixture's application poll callback remained at one
   active request and the view's shared Promise prevents duplicate snapshots.
+- 2026-08-23: Annotated tag `v0.2` points to `1a200a5`. Tag CI run
+  `32638746412` passed metadata validation and all six SDK builds, then
+  published the non-draft, non-prerelease GitHub Release. Its assets are
+  exactly 12 target-prefixed packages plus `SHA256SUMS`; downloading all 13
+  assets and checking the 12 listed hashes succeeds.
+- 2026-08-23: The target router force-reinstalled the two ImmortalWrt master
+  Release APKs offline after exact SHA-256 and `apk verify` checks. Both
+  installed packages report `0.2-r1`; the installed view, menu, ACL, and
+  Simplified Chinese LMO hashes match the Release manifests and the long-tested
+  release candidate. The final short browser regression measured one-second
+  intervals of 994-1009 ms, five-second intervals of 4992-4996 ms, and default
+  three-second intervals of 2992-3005 ms (2999.667 ms average). DOM count stayed
+  at 275, forced-GC heap changed by 6616 bytes, focus was preserved, sensors ran
+  once, and console/page errors were zero. All six bilingual desktop/mobile,
+  traffic, and sensor screenshots were visually checked without overflow,
+  overlap, truncation, or column mismatch. Router-side uploaded and prior stray
+  APKs, local Release/test assets, screenshots, results, CI logs, and the
+  temporary Playwright install were removed; the router retains only the two
+  installed plugin packages and no test process.
