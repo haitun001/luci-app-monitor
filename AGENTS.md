@@ -15,7 +15,9 @@
 - Refresh live data every three seconds through one LuCI `poll.add()` callback.
 - Update existing text nodes in place. Rebuild a table body only when the set
   of interface or sensor keys changes. Never replace focused controls.
-- CPU supports multiple cores and follows LuCI's existing CPU usage RPC.
+- Read aggregate CPU counters from `/proc/stat`. Calculate multi-core CPU usage
+  from consecutive `cpu` samples, counting idle and iowait as idle. A first,
+  malformed, reset, or non-increasing sample displays `-`.
 - Physical memory usage is `(total - free) / total`; swap is excluded.
 - Probe `/usr/sbin/sensors -j -A` through an exact read-only ACL. Treat a valid
   top-level JSON object as a probe result regardless of command exit status;
@@ -65,6 +67,28 @@
 - Use `apply_patch` for manual source edits. Keep code minimal and avoid
   speculative abstractions or unused compatibility paths.
 - Update this file when a verified behavior, constraint, or test result changes.
+
+## Release Contract
+
+- The initial public release is `v0.1`; both `luci-app-monitor` and
+  `luci-i18n-monitor-zh-cn` use package version `0.1-r1`.
+- Publish under Apache License 2.0 at
+  `https://github.com/haitun001/luci-app-monitor`.
+- Keep `README.md` in Chinese and `README_EN.md` in English. Both documents
+  must describe features, source-tree builds, Release installation, supported
+  firmware series, artifact selection, verification scope, and maintenance.
+- GitHub Actions builds on pushes to `main` and manual dispatch. A matching
+  `v*` tag additionally creates a GitHub Release. The tag version must equal
+  `PKG_VERSION`.
+- Build main and Simplified Chinese packages for OpenWrt 24.10.8, 25.12.5,
+  Snapshot, ImmortalWrt 24.10.6, 25.12.1, and master. Release assets contain
+  exactly those 12 packages plus `SHA256SUMS`.
+- OpenWrt/ImmortalWrt 24.10 artifacts are IPK packages. 25.12 and development
+  snapshots are APK packages. Do not mix firmware family or series artifacts.
+- Verify branch CI before creating or moving a release tag. Pin third-party
+  Actions by commit and use the GitHub CLI for Release creation.
+- The supplied x86_64 ImmortalWrt master router is runtime-tested. Other listed
+  targets are SDK build-tested and must be documented as such.
 
 ## Required Verification Before Delivery
 
@@ -193,3 +217,28 @@
   results, built APKs, package build/staging metadata, and the temporary source
   symlink. The router retains only the installed main and Chinese packages, and
   the ImmortalWrt tree retains exactly its four pre-existing Git status entries.
+- 2026-08-23: Release `v0.1` constraints are locked before implementation.
+  Official OpenWrt compatibility requires replacing ImmortalWrt's private
+  `luci.getCPUUsage` RPC with exact read access to `/proc/stat`; deterministic
+  invalid, reset, and consecutive-sample cases are required before release.
+- 2026-08-23: Portable aggregate `/proc/stat` CPU sampling, exact read ACL,
+  `0.1-r1` metadata, Apache-2.0 license, bilingual documentation, and the
+  six-target build/Release workflow are implemented. JavaScript, JSON, YAML,
+  gettext, LuCI extraction, and whitespace checks pass.
+- 2026-08-23: The authoritative ImmortalWrt master tree built signed
+  `luci-app-monitor-0.1-r1.apk` and `luci-i18n-monitor-zh-cn-0.1-r1.apk` as
+  noarch packages. Signatures, package metadata, dependencies, and minimal
+  file manifests pass inspection; the source-tree `.config` was restored and
+  the temporary package symlink was removed.
+- 2026-08-23: The local `0.1-r1` packages replaced the target router's prior
+  date/hash packages after exact SHA-256 verification. Installed view, menu,
+  ACL, and LMO hashes match the build. Deterministic fixtures pass aggregate
+  multi-core CPU calculation, malformed input, baseline recovery, counter
+  reset recovery, 18 mixed network rows, hotplug, WAN deduplication, and sensor
+  retries. Six desktop/mobile screenshots were visually checked without
+  overflow, overlap, truncation, or field mismatch.
+- 2026-08-23: The local `0.1-r1` runtime passed a continuous eight-minute
+  soak: 169 system samples, 2987-3015 ms steady intervals (2999.94 ms average),
+  DOM count 211 before/after/maximum, forced-GC heap 2589884 -> 2563504 bytes,
+  zero console errors, zero page errors, preserved focus, and one sensors
+  request.

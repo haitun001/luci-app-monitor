@@ -23,19 +23,36 @@ var callNetworkDevices = rpc.declare({
 	expect: { '': {} }
 });
 
-var callCPUUsage = rpc.declare({
-	object: 'luci',
-	method: 'getCPUUsage'
-});
-
 function loadSnapshot(withSensors) {
 	return Promise.all([
 		L.resolveDefault(callSystemInfo(), {}),
 		L.resolveDefault(callInterfaceDump(), []),
 		L.resolveDefault(callNetworkDevices(), {}),
-		L.resolveDefault(callCPUUsage(), {}),
+		L.resolveDefault(fs.read('/proc/stat'), null),
 		withSensors ? L.resolveDefault(fs.exec('/usr/sbin/sensors', [ '-j', '-A' ]), null) : null
 	]);
+}
+
+function cpuUsage(previous, data) {
+	var match = typeof(data) == 'string' &&
+		data.match(/^cpu[\t ]+(\d+(?:[\t ]+\d+){3,})[\t ]*$/m);
+
+	if (!match)
+		return { value: '-', sample: null };
+
+	var values = match[1].trim().split(/[\t ]+/).slice(0, 8).map(Number),
+	    sample = {
+		    total: values.reduce(function(sum, value) { return sum + value; }, 0),
+		    idle: values[3] + (values[4] || 0)
+	    },
+	    total = previous ? sample.total - previous.total : 0,
+	    idle = previous ? sample.idle - previous.idle : 0;
+
+	return {
+		value: previous && total > 0 && idle >= 0 && idle <= total
+			? '%.2f%%'.format((total - idle) * 100 / total) : '-',
+		sample: sample.total > 0 && sample.idle <= sample.total ? sample : null
+	};
 }
 
 function formatBytes(bytes, rate) {
@@ -467,14 +484,15 @@ return view.extend({
 		var system = snapshot[0],
 		    allInterfaces = Array.isArray(snapshot[1]) ? snapshot[1] : [],
 		    devices = snapshot[2] || {},
-		    cpu = snapshot[3] || {},
+		    cpu = cpuUsage(this.cpuSample, snapshot[3]),
 		    definitions = lineDefinitions(allInterfaces, devices),
 		    lines = definitions.lines,
 		    wan = wanDevices(allInterfaces, devices, definitions.groups),
 		    now = Date.now(),
 		    interfaceKey = JSON.stringify(lines.map(function(line) { return line.key; }));
 
-		this.metricNodes.cpu.data = typeof(cpu.cpuusage) == 'string' ? cpu.cpuusage : '-';
+		this.cpuSample = cpu.sample;
+		this.metricNodes.cpu.data = cpu.value;
 
 		var memory = system.memory || {};
 		this.metricNodes.memory.data = Number(memory.total) > 0
@@ -554,6 +572,7 @@ return view.extend({
 		this.sensorNodes = {};
 		this.lineSamples = {};
 		this.totalSample = null;
+		this.cpuSample = null;
 		this.pollSensors = true;
 		this.sensorFailures = 0;
 		this.interfaceKey = null;

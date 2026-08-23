@@ -174,6 +174,35 @@ async function trafficFixture(browser) {
 	let sample = -1;
 	let hotplug = false;
 	let resetLan1 = false;
+	let cpuMode = 'normal';
+	let cpuReads = 0;
+	const cpu = { user: 100, system: 100, idle: 800 };
+
+	function cpuData() {
+		cpuReads++;
+		if (cpuMode === 'malformed')
+			return 'cpu unavailable\n';
+		if (cpuMode === 'reset') {
+			Object.assign(cpu, { user: 10, system: 10, idle: 80 });
+			cpuMode = 'normal';
+		}
+
+		const data = `cpu  ${cpu.user} 0 ${cpu.system} ${cpu.idle} 0 0 0 0 999 999\n` +
+			`cpu0 1 0 1 98 0 0 0 0 0 0\ncpu1 99 0 99 702 0 0 0 0 0 0\n`;
+		cpu.user += 10;
+		cpu.system += 10;
+		cpu.idle += 80;
+		return data;
+	}
+
+	async function nextCPU(mode) {
+		const before = cpuReads;
+		cpuMode = mode;
+		for (let i = 0; i < 50 && cpuReads === before; i++)
+			await page.waitForTimeout(100);
+		assert(cpuReads > before, 'Timed out waiting for CPU sample');
+		await page.waitForTimeout(100);
+	}
 
 	await page.route('**/ubus/**', async route => {
 		const batch = calls(route.request().postData());
@@ -246,8 +275,8 @@ async function trafficFixture(browser) {
 				item.result = [ 0, { localtime: 1787429279 + n * 5, memory: { total: 1024, free: 256 } } ];
 				changed = true;
 			}
-			else if (object === 'luci' && method === 'getCPUUsage') {
-				item.result = [ 0, { cpuusage: '12%' } ];
+			else if (object === 'file' && method === 'read' && call.params?.[3]?.path === '/proc/stat') {
+				item.result = [ 0, { data: cpuData() } ];
 				changed = true;
 			}
 			else if (object === 'file' && method === 'exec') {
@@ -272,6 +301,7 @@ async function trafficFixture(browser) {
 	const n = sample;
 	const byLabel = Object.fromEntries(rows.map(row => [ row[0], row ]));
 
+	assert.equal(summary[0], '20.00%');
 	assert.deepEqual(rows.map(row => row[0]), expectedLabels);
 	assert.equal(byLabel['downlan (br-down)'][1], 'Disconnected');
 	assert.equal(byLabel['downlan (br-down)'][2], '0.00 KB/s');
@@ -295,6 +325,18 @@ async function trafficFixture(browser) {
 	assert.equal(rows.some(row => row[0] === 'pppoe-wan'), false);
 	for (const ignored of [ 'lo', 'gre0', 'ifb0', 'mon.wlan0', 'sit0', 'wifi0' ])
 		assert.equal(rows.some(row => row[0] === ignored), false);
+
+	const cpuValue = tables.nth(0).locator('tbody tr').first().locator('td:last-child');
+	await nextCPU('malformed');
+	assert.equal((await cpuValue.innerText()).trim(), '-');
+	await nextCPU('normal');
+	assert.equal((await cpuValue.innerText()).trim(), '-');
+	await nextCPU('normal');
+	assert.equal((await cpuValue.innerText()).trim(), '20.00%');
+	await nextCPU('reset');
+	assert.equal((await cpuValue.innerText()).trim(), '-');
+	await nextCPU('normal');
+	assert.equal((await cpuValue.innerText()).trim(), '20.00%');
 
 	const focusTarget = page.locator('a:visible').first();
 	await focusTarget.focus();

@@ -1,0 +1,139 @@
+name: Build and release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate release metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Check version
+        shell: bash
+        run: |
+          version="$(sed -n 's/^PKG_VERSION:=//p' Makefile)"
+          release="$(sed -n 's/^PKG_RELEASE:=//p' Makefile)"
+          po_version="$(sed -n 's/^PKG_PO_VERSION:=//p' Makefile)"
+          test -n "$version"
+          test -n "$release"
+          test "$po_version" = '$(PKG_VERSION)-r$(PKG_RELEASE)'
+          test -f LICENSE
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            test "$GITHUB_REF_NAME" = "v$version"
+          fi
+
+  build:
+    name: ${{ matrix.label }}
+    needs: validate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: openwrt-24.10.8
+            label: OpenWrt 24.10.8
+            container: ghcr.io/openwrt/sdk
+            arch: x86_64-24.10.8
+            format: ipk
+          - id: openwrt-25.12.5
+            label: OpenWrt 25.12.5
+            container: ghcr.io/openwrt/sdk
+            arch: x86_64-25.12.5
+            format: apk
+          - id: openwrt-snapshot
+            label: OpenWrt Snapshot
+            container: ghcr.io/openwrt/sdk
+            arch: x86_64
+            format: apk
+          - id: immortalwrt-24.10.6
+            label: ImmortalWrt 24.10.6
+            container: immortalwrt/sdk
+            arch: x86_64-openwrt-24.10.6
+            format: ipk
+          - id: immortalwrt-25.12.1
+            label: ImmortalWrt 25.12.1
+            container: immortalwrt/sdk
+            arch: x86_64-openwrt-25.12.1
+            format: apk
+          - id: immortalwrt-master
+            label: ImmortalWrt master
+            container: immortalwrt/sdk
+            arch: x86_64-master
+            format: apk
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+      - name: Build packages
+        uses: openwrt/gh-action-sdk@7fc2640243284ecc44f4a9c3f749a61746ee02cb
+        env:
+          ARCH: ${{ matrix.arch }}
+          CONTAINER: ${{ matrix.container }}
+          PACKAGES: luci-app-monitor
+      - name: Collect packages
+        shell: bash
+        env:
+          BUILD_ID: ${{ matrix.id }}
+          FORMAT: ${{ matrix.format }}
+        run: |
+          mapfile -t packages < <(find bin/packages -type f \
+            \( -name "luci-app-monitor*.$FORMAT" -o \
+            -name "luci-i18n-monitor-zh-cn*.$FORMAT" \) | sort)
+          if [[ "${#packages[@]}" -ne 2 ]]; then
+            printf 'Expected two packages, found %s:\n' "${#packages[@]}"
+            printf '%s\n' "${packages[@]}"
+            exit 1
+          fi
+          mkdir dist
+          for package in "${packages[@]}"; do
+            cp "$package" "dist/$BUILD_ID-$(basename "$package")"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: packages-${{ matrix.id }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: packages-*
+          path: release
+          merge-multiple: true
+      - name: Verify and checksum assets
+        shell: bash
+        run: |
+          mapfile -t packages < <(find release -maxdepth 1 -type f \
+            \( -name '*.ipk' -o -name '*.apk' \) | sort)
+          test "${#packages[@]}" -eq 12
+          (cd release && find . -maxdepth 1 -type f \
+            \( -name '*.ipk' -o -name '*.apk' \) -printf '%f\0' |
+            sort -z | xargs -0 sha256sum > SHA256SUMS)
+          test "$(find release -maxdepth 1 -type f | wc -l)" -eq 13
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "$GITHUB_REF_NAME" \
+            --notes "See README.md and README_EN.md for artifact selection, verification, and installation."

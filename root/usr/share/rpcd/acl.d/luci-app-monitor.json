@@ -3,11 +3,11 @@
 		"description": "Grant read access to LuCI Monitor",
 		"read": {
 			"file": {
+				"/proc/stat": [ "read" ],
 				"/usr/sbin/sensors -j -A": [ "exec" ]
 			},
 			"ubus": {
-				"file": [ "exec" ],
-				"luci": [ "getCPUUsage" ],
+				"file": [ "exec", "read" ],
 				"luci-rpc": [ "getNetworkDevices" ],
 				"network.interface": [ "dump" ],
 				"system": [ "info" ]
