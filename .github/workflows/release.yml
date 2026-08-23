@@ -78,6 +78,7 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
           CONTAINER: ${{ matrix.container }}
+          FEED_DIR: ${{ github.workspace }}/..
           PACKAGES: luci-app-monitor
       - name: Collect packages
         shell: bash

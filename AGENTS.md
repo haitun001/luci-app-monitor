@@ -242,3 +242,10 @@
   DOM count 211 before/after/maximum, forced-GC heap 2589884 -> 2563504 bytes,
   zero console errors, zero page errors, preserved focus, and one sensors
   request.
+- 2026-08-23: Initial branch CI run `32614506647` passed metadata validation
+  but all six SDK builds failed because `gh-action-sdk` mounted the package
+  repository itself as a feed and therefore searched below the package root.
+  Its logs report a missing action-feed index and no
+  `package/luci-app-monitor/download` target. The feed root is now the checkout
+  parent, placing `luci-app-monitor/Makefile` one directory below it as the SDK
+  feed scanner requires.
