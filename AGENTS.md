@@ -270,3 +270,14 @@
   column mismatch. Router APKs and local build/test artifacts were removed;
   only the two installed packages remain, and the ImmortalWrt tree retains
   exactly its four pre-existing Git status entries with an unchanged `.config`.
+- 2026-08-23: Active CPU verification on the two-core Release router captured
+  31 distinct complete `/proc/stat` RPC responses and independently recomputed
+  every aggregate sample before comparing it with the corresponding rendered
+  value. Five stable samples per phase produced medians of
+  7.328990228013029% at baseline, 51.333333333333336% with CPU 0 pinned busy,
+  100% with CPUs 0 and 1 pinned busy, and 5.676126878130217% after recovery.
+  The maximum RPC-to-UI difference was 0.004925864909388622 percentage points;
+  the initial sample rendered `-` as specified, and there were zero invalid
+  stable values, console errors, or page errors. All three self-terminating
+  27-second load processes exited with code 0; exact-PID and marker checks
+  confirmed no router-side test process remained, and no package was installed.
