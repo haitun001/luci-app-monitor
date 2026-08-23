@@ -113,8 +113,9 @@ and do not mix artifacts from different firmware families or series.
   must match.
 - The supplied x86_64 ImmortalWrt master router is runtime-tested for page
   rendering, permissions, traffic directions, refresh cadence, focus
-  preservation, and an eight-minute soak. Other targets are SDK build-tested;
-  they are not claimed as hardware-tested.
+  preservation, an eight-minute three-second soak, and an additional
+  three-minute one-second soak. Other targets are SDK build-tested; they are
+  not claimed as hardware-tested.
 - The sensors command is an optional probe. Missing lm-sensors or temperature
   inputs do not affect the other metrics.
 

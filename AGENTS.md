@@ -113,6 +113,8 @@
 - Complete an eight-minute browser soak and record request intervals, DOM size,
   console errors, and forced-GC heap before and after. Run a 30-minute soak only
   when the user explicitly requests that duration.
+- For `v0.2`, additionally run an explicitly requested three-minute soak at a
+  selected one-second interval and record the same resource and stability data.
 - Remove router-side APKs and test artifacts; leave only installed packages.
 
 ## Progress
@@ -320,3 +322,17 @@
   survived refreshes and row hotplug, and console/page errors were zero. All
   six English/Chinese desktop/mobile, traffic, and sensor screenshots were
   visually checked without overflow, overlap, truncation, or misalignment.
+- 2026-08-23: The user explicitly requested one additional three-minute soak at
+  a selected one-second interval for `v0.2`. The existing browser suite now
+  accepts a validated, test-only `MONITOR_SOAK_INTERVAL`; its default remains
+  three seconds and it does not alter or persist plugin state.
+- 2026-08-23: The requested one-second runtime soak passed on the installed
+  `0.2-r1` release candidate: 204 samples over three minutes, 981-1041 ms
+  intervals (1000.158 ms average), DOM count 275 before/after/maximum, forced-GC
+  heap 3077532 -> 3100088 bytes (+22556), zero console errors, zero page errors,
+  preserved focus, and one sensors request. The six fixture and bilingual
+  desktop/mobile screenshots were visually checked without overflow, overlap,
+  truncation, or column mismatch. The HTTP observer saw a maximum of two
+  concurrent `system.info` requests because LuCI's global status request can
+  interleave; the interval fixture's application poll callback remained at one
+  active request and the view's shared Promise prevents duplicate snapshots.

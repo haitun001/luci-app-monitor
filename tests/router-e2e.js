@@ -11,9 +11,12 @@ const password = process.env.MONITOR_ROUTER_PASSWORD;
 const chromePath = process.env.MONITOR_CHROME_PATH;
 const outputDir = process.env.MONITOR_OUTPUT_DIR;
 const soakMinutes = Number(process.env.MONITOR_SOAK_MINUTES || 8);
+const soakInterval = Number(process.env.MONITOR_SOAK_INTERVAL || 3);
 
 for (const [ name, value ] of Object.entries({ baseUrl, password, chromePath, outputDir }))
 	assert(value, `Missing required environment value: ${name}`);
+assert(Number.isInteger(soakInterval) && soakInterval >= 1 && soakInterval <= 60,
+	'MONITOR_SOAK_INTERVAL must be an integer from 1 to 60');
 
 fs.mkdirSync(outputDir, { recursive: true });
 
@@ -21,7 +24,8 @@ const results = {
 	consoleErrors: [],
 	pageErrors: [],
 	screenshots: [],
-	soakMinutes
+	soakMinutes,
+	soakInterval
 };
 
 function calls(body) {
@@ -522,6 +526,8 @@ async function soak(browser) {
 	const observed = watch(page);
 	await login(page);
 	const refreshSelect = await intervalControl(page, 'Refresh Interval (seconds)');
+	if (soakInterval != 3)
+		await refreshSelect.selectOption(String(soakInterval));
 	await page.waitForTimeout(11000);
 
 	const tables = page.locator('table');
@@ -589,12 +595,13 @@ async function soak(browser) {
 	await cdp.send('HeapProfiler.collectGarbage');
 	const heapAfter = (await cdp.send('Runtime.getHeapUsage')).usedSize;
 	const intervals = observed.polls.slice(1).map((time, index) => time - observed.polls[index]);
-	const steadyIntervals = intervals.filter(interval => interval >= 2000);
+	const intervalTarget = soakInterval * 1000;
+	const steadyIntervals = intervals.filter(interval => interval >= intervalTarget - 500);
 	const intervalAverage = steadyIntervals.reduce((sum, value) => sum + value, 0) / steadyIntervals.length;
 
-	assert(steadyIntervals.length >= Math.max(2, Math.floor(soakMinutes * 18)));
-	assert(steadyIntervals.every(interval => interval >= 2500 && interval <= 4500));
-	assert(intervalAverage >= 2900 && intervalAverage <= 3100);
+	assert(steadyIntervals.length >= Math.max(2, Math.floor(soakMinutes * 54 / soakInterval)));
+	assert(steadyIntervals.every(interval => interval <= intervalTarget + 1500));
+	assert(intervalAverage >= intervalTarget - 100 && intervalAverage <= intervalTarget + 100);
 	assert.equal(maxDom, domBefore);
 	assert.equal(await page.locator('*').count(), domBefore);
 	assert(heapAfter - heapBefore <= 1024 ** 2);
