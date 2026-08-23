@@ -7,7 +7,8 @@ luci-app-monitor 是一个只读的 OpenWrt/ImmortalWrt LuCI 实时监视器。�
 
 ## 功能
 
-- 每 3 秒异步刷新一次 CPU、内存和网络数据，不重载页面，不保存历史数据。
+- 默认每 3 秒异步刷新 CPU、内存和网络数据；页面顶部可立即调整为 1–60 秒。
+  刷新间隔不持久化，重新打开页面后恢复为 3 秒。
 - CPU 使用率由 /proc/stat 的聚合计数器计算，支持多核心 CPU。
 - 内存使用率仅计算物理内存的 (total - free) / total，不包含 Swap。
 - 安装并检测到 lm-sensors 时显示传感器名称和摄氏温度；没有有效传感器时不显示。
@@ -60,12 +61,12 @@ luci-i18n-monitor-zh-cn 简体中文包。
 | immortalwrt-25.12.1 | APK |
 | immortalwrt-master | APK |
 
-以下示例直接下载 ImmortalWrt master 的 v0.1 包，并核对 Release 中的 SHA-256：
+以下示例直接下载 ImmortalWrt master 的 v0.2 包，并核对 Release 中的 SHA-256：
 
 ~~~sh
-wget https://github.com/haitun001/luci-app-monitor/releases/download/v0.1/immortalwrt-master-luci-app-monitor-0.1-r1.apk
-wget https://github.com/haitun001/luci-app-monitor/releases/download/v0.1/immortalwrt-master-luci-i18n-monitor-zh-cn-0.1-r1.apk
-wget https://github.com/haitun001/luci-app-monitor/releases/download/v0.1/SHA256SUMS
+wget https://github.com/haitun001/luci-app-monitor/releases/download/v0.2/immortalwrt-master-luci-app-monitor-0.2-r1.apk
+wget https://github.com/haitun001/luci-app-monitor/releases/download/v0.2/immortalwrt-master-luci-i18n-monitor-zh-cn-0.2-r1.apk
+wget https://github.com/haitun001/luci-app-monitor/releases/download/v0.2/SHA256SUMS
 grep ' immortalwrt-master-' SHA256SUMS | sha256sum -c -
 ~~~
 
@@ -96,7 +97,7 @@ rm -f /tmp/*.apk
 ## 支持范围与验证
 
 - 支持带 LuCI 的 OpenWrt 和 ImmortalWrt 24.10 及更新系列。
-- v0.1 的 CI 实际构建 OpenWrt 24.10.8、25.12.5、Snapshot，以及
+- v0.2 的 CI 实际构建 OpenWrt 24.10.8、25.12.5、Snapshot，以及
   ImmortalWrt 24.10.6、25.12.1、master。
 - 主包为 all、APK 对应 noarch；网络架构通常不限制安装，但固件家族、发行系列
   和包管理器必须匹配。
@@ -107,8 +108,9 @@ rm -f /tmp/*.apk
 ## 发布维护
 
 发布新版本时修改 Makefile 中的 PKG_VERSION（需要时递增 PKG_RELEASE），提交并
-推送 main，等待六个 CI 构建全部通过，再推送与 PKG_VERSION 一致的 v* 标签。
-标签工作流会重新构建 12 个包、生成 SHA256SUMS，并创建 GitHub Release。
+推送 main，等待六个 CI 构建全部通过，再推送与 PKG_VERSION 一致的 v* 标签，并在
+CHANGELOG.md 中提供同版本发布日志。标签工作流会重新构建 12 个包、生成
+SHA256SUMS，并使用对应日志创建 GitHub Release。
 
 ## 许可证
 

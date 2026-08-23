@@ -27,6 +27,7 @@ jobs:
           test -n "$release"
           test "$po_version" = '$(PKG_VERSION)-r$(PKG_RELEASE)'
           test -f LICENSE
+          grep -Fxq "## v$version" CHANGELOG.md
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             test "$GITHUB_REF_NAME" = "v$version"
           fi
@@ -113,6 +114,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           pattern: packages-*
@@ -133,8 +135,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
+          awk -v header="## $GITHUB_REF_NAME" '
+            $0 == header { found = 1; next }
+            found && /^## v/ { exit }
+            found { print }
+            END { if (!found) exit 1 }
+          ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"
+          test -s "$RUNNER_TEMP/release-notes.md"
           gh release create "$GITHUB_REF_NAME" release/* \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "$GITHUB_REF_NAME" \
-            --notes "See README.md and README_EN.md for artifact selection, verification, and installation."
+            --notes-file "$RUNNER_TEMP/release-notes.md"

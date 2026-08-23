@@ -7,8 +7,9 @@ ImmortalWrt. After installation, open it at Status -> Monitor.
 
 ## Features
 
-- Refreshes CPU, memory, and network data asynchronously every three seconds
-  without reloading the page or storing history.
+- Refreshes CPU, memory, and network data asynchronously every three seconds by
+  default. A page-level selector applies any interval from 1 to 60 seconds
+  immediately and resets to three seconds when the page is reopened.
 - Calculates aggregate multi-core CPU usage from /proc/stat.
 - Reports physical memory usage as (total - free) / total, excluding swap.
 - Shows sensor names and temperatures in degrees Celsius when lm-sensors
@@ -67,13 +68,13 @@ family and series.
 | immortalwrt-25.12.1 | APK |
 | immortalwrt-master | APK |
 
-This example directly downloads the v0.1 ImmortalWrt master packages and
+This example directly downloads the v0.2 ImmortalWrt master packages and
 checks them against the published SHA-256 file:
 
 ~~~sh
-wget https://github.com/haitun001/luci-app-monitor/releases/download/v0.1/immortalwrt-master-luci-app-monitor-0.1-r1.apk
-wget https://github.com/haitun001/luci-app-monitor/releases/download/v0.1/immortalwrt-master-luci-i18n-monitor-zh-cn-0.1-r1.apk
-wget https://github.com/haitun001/luci-app-monitor/releases/download/v0.1/SHA256SUMS
+wget https://github.com/haitun001/luci-app-monitor/releases/download/v0.2/immortalwrt-master-luci-app-monitor-0.2-r1.apk
+wget https://github.com/haitun001/luci-app-monitor/releases/download/v0.2/immortalwrt-master-luci-i18n-monitor-zh-cn-0.2-r1.apk
+wget https://github.com/haitun001/luci-app-monitor/releases/download/v0.2/SHA256SUMS
 grep ' immortalwrt-master-' SHA256SUMS | sha256sum -c -
 ~~~
 
@@ -105,7 +106,7 @@ and do not mix artifacts from different firmware families or series.
 ## Compatibility and verification
 
 - Supports LuCI-equipped OpenWrt and ImmortalWrt 24.10 and later.
-- The v0.1 CI matrix builds OpenWrt 24.10.8, 25.12.5, and Snapshot, plus
+- The v0.2 CI matrix builds OpenWrt 24.10.8, 25.12.5, and Snapshot, plus
   ImmortalWrt 24.10.6, 25.12.1, and master.
 - The IPK main package is all and APK is noarch. CPU architecture is generally
   not a restriction, but firmware family, release series, and package manager
@@ -120,9 +121,10 @@ and do not mix artifacts from different firmware families or series.
 ## Maintainer release process
 
 For a new release, update PKG_VERSION in Makefile and increment PKG_RELEASE
-when appropriate. Commit and push main, wait for all six CI builds to pass,
-then push a v* tag matching PKG_VERSION. The tag workflow rebuilds 12 packages,
-generates SHA256SUMS, and creates the GitHub Release.
+when appropriate, and add matching release notes to CHANGELOG.md. Commit and
+push main, wait for all six CI builds to pass, then push a v* tag matching
+PKG_VERSION. The tag workflow rebuilds 12 packages, generates SHA256SUMS, and
+creates the GitHub Release with the matching changelog entry.
 
 ## License
 

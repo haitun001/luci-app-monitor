@@ -566,6 +566,35 @@ return view.extend({
 			this.updateSensors(snapshot[4]);
 	},
 
+	refresh: function() {
+		if (this.refreshRequest)
+			return this.refreshRequest;
+
+		this.refreshRequest = loadSnapshot(this.pollSensors).then(L.bind(function(snapshot) {
+			this.update(snapshot);
+		}, this)).finally(L.bind(function() {
+			this.refreshRequest = null;
+		}, this));
+
+		return this.refreshRequest;
+	},
+
+	handleIntervalChange: function(ev) {
+		var interval = Number(ev.target.value);
+
+		interval = isFinite(interval)
+			? Math.min(60, Math.max(1, Math.floor(interval))) : 3;
+		ev.target.value = String(interval);
+
+		if (interval == this.pollInterval)
+			return;
+
+		this.pollInterval = interval;
+		poll.remove(this.pollCallback);
+		poll.add(this.pollCallback, interval);
+		this.pollCallback();
+	},
+
 	render: function(data) {
 		this.metricNodes = {};
 		this.interfaceRows = {};
@@ -577,6 +606,9 @@ return view.extend({
 		this.sensorFailures = 0;
 		this.interfaceKey = null;
 		this.sensorKey = null;
+		this.pollInterval = 3;
+		this.refreshRequest = null;
+		this.pollCallback = L.bind(this.refresh, this);
 
 		var zone = uci.get('system', '@system[0]', 'zonename');
 		zone = typeof(zone) == 'string' ? zone.replaceAll(' ', '_') : 'UTC';
@@ -593,6 +625,17 @@ return view.extend({
 			this.dateFormatter = null;
 		}
 
+		var intervals = [];
+		for (var second = 1; second <= 60; second++)
+			intervals.push(E('option', { 'value': second }, second));
+
+		var intervalSelect = E('select', {
+			'id': 'monitor-refresh-interval',
+			'class': 'cbi-input-select',
+			'change': L.bind(this.handleIntervalChange, this)
+		}, intervals);
+		intervalSelect.value = '3';
+
 		var summaryBody = E('tbody', [
 			valueRow(_('CPU Usage', 'luci-app-monitor'), this.metricNodes, 'cpu'),
 			valueRow(_('Memory Usage', 'luci-app-monitor'), this.metricNodes, 'memory'),
@@ -604,6 +647,13 @@ return view.extend({
 
 		var page = E([], [
 			E('h2', _('Router Monitor')),
+			E('div', { 'class': 'cbi-value' }, [
+				E('label', {
+					'class': 'cbi-value-title',
+					'for': 'monitor-refresh-interval'
+				}, _('Refresh Interval (seconds)', 'luci-app-monitor')),
+				E('div', { 'class': 'cbi-value-field' }, intervalSelect)
+			]),
 			E('table', { 'class': 'table' }, [ summaryBody, this.sensorBody ]),
 			E('h3', _('Interfaces', 'luci-app-monitor')),
 			E('table', { 'class': 'table' }, [
@@ -621,11 +671,7 @@ return view.extend({
 		]);
 
 		this.update(data[3]);
-		poll.add(L.bind(function() {
-			return loadSnapshot(this.pollSensors).then(L.bind(function(snapshot) {
-				this.update(snapshot);
-			}, this));
-		}, this), 3);
+		poll.add(this.pollCallback, this.pollInterval);
 
 		return page;
 	},

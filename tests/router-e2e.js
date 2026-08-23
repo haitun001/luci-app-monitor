@@ -35,6 +35,9 @@ function calls(body) {
 
 function watch(page) {
 	const polls = [], sensorRequests = [], sensorReplies = [];
+	const observed = { polls, sensorRequests, sensorReplies, activePolls: 0, maxConcurrentPolls: 0 };
+	const isPoll = request => calls(request.postData()).some(call =>
+		call.params?.[1] === 'system' && call.params?.[2] === 'info');
 
 	page.on('console', message => {
 		if (message.type() === 'error')
@@ -43,8 +46,11 @@ function watch(page) {
 	page.on('pageerror', error => results.pageErrors.push(error.message));
 	page.on('request', request => {
 		const batch = calls(request.postData());
-		if (batch.some(call => call.params?.[1] === 'system' && call.params?.[2] === 'info'))
+		if (isPoll(request)) {
 			polls.push(Date.now());
+			observed.activePolls++;
+			observed.maxConcurrentPolls = Math.max(observed.maxConcurrentPolls, observed.activePolls);
+		}
 		if (batch.some(call => call.params?.[1] === 'file' && call.params?.[2] === 'exec' &&
 			call.params?.[3]?.command === '/usr/sbin/sensors' &&
 			JSON.stringify(call.params?.[3]?.params) === JSON.stringify([ '-j', '-A' ])))
@@ -64,8 +70,14 @@ function watch(page) {
 			sensorReplies.push(null);
 		}
 	});
+	const finish = request => {
+		if (isPoll(request))
+			observed.activePolls--;
+	};
+	page.on('requestfinished', finish);
+	page.on('requestfailed', finish);
 
-	return { polls, sensorRequests, sensorReplies };
+	return observed;
 }
 
 async function login(page) {
@@ -90,13 +102,38 @@ async function screenshot(page, name) {
 	results.screenshots.push(file);
 }
 
-async function smoke(browser, locale, viewport, expectedTitle, expectedHeaders, name) {
+async function intervalControl(page, expectedLabel) {
+	const select = page.locator('#monitor-refresh-interval');
+	await select.waitFor({ state: 'visible' });
+	assert.equal((await page.locator('label[for="monitor-refresh-interval"]').innerText()).trim(), expectedLabel);
+	assert.equal(await select.inputValue(), '3');
+	assert.deepEqual(await select.locator('option').evaluateAll(options =>
+		options.map(option => option.value)), Array.from({ length: 60 }, (_, index) => String(index + 1)));
+	return select;
+}
+
+async function waitForPolls(page, polls, count, timeout) {
+	const deadline = Date.now() + timeout;
+	while (polls.length < count && Date.now() < deadline)
+		await page.waitForTimeout(50);
+	assert(polls.length >= count, `Timed out waiting for ${count} polls; observed ${polls.length}`);
+}
+
+async function waitForIdle(page, observed, timeout) {
+	const deadline = Date.now() + timeout;
+	while (observed.activePolls > 0 && Date.now() < deadline)
+		await page.waitForTimeout(50);
+	assert.equal(observed.activePolls, 0, 'Timed out waiting for the active poll to finish');
+}
+
+async function smoke(browser, locale, viewport, expectedTitle, expectedIntervalLabel, expectedHeaders, name) {
 	const context = await browser.newContext({ locale, viewport });
 	const page = await context.newPage();
 	watch(page);
 	await login(page);
 	await page.waitForTimeout(6000);
 	assert.equal((await page.locator('h2').innerText()).trim(), expectedTitle);
+	await intervalControl(page, expectedIntervalLabel);
 	const table = page.locator('table').nth(1);
 	const labels = (await table.locator('tbody tr td:first-child').allTextContents()).map(value => value.trim());
 	assert(labels.length > 1);
@@ -109,6 +146,63 @@ async function smoke(browser, locale, viewport, expectedTitle, expectedHeaders, 
 	assert.equal(results.consoleErrors.length, 0);
 	assert.equal(results.pageErrors.length, 0);
 	await screenshot(page, name);
+	await context.close();
+}
+
+async function intervalFixture(browser) {
+	const context = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 900 } });
+	const page = await context.newPage();
+	const observed = watch(page);
+	await login(page);
+	const select = await intervalControl(page, 'Refresh Interval (seconds)');
+	await waitForIdle(page, observed, 3000);
+	observed.maxConcurrentPolls = 0;
+
+	let start = observed.polls.length;
+	let changed = Date.now();
+	await select.selectOption('1');
+	await waitForPolls(page, observed.polls, start + 4, 6000);
+	let samples = observed.polls.slice(start, start + 4);
+	const oneSecondIntervals = samples.slice(1).map((time, index) => time - samples[index]);
+	assert(samples[0] - changed < 1200);
+	assert(oneSecondIntervals.every(interval => interval >= 700 && interval <= 1800));
+	assert.equal(await page.evaluate(() => document.activeElement?.id), 'monitor-refresh-interval');
+	await waitForIdle(page, observed, 3000);
+
+	start = observed.polls.length;
+	changed = Date.now();
+	await select.selectOption('5');
+	await waitForPolls(page, observed.polls, start + 3, 13000);
+	samples = observed.polls.slice(start, start + 3);
+	const fiveSecondIntervals = samples.slice(1).map((time, index) => time - samples[index]);
+	assert(samples[0] - changed < 1200);
+	assert(fiveSecondIntervals.every(interval => interval >= 4300 && interval <= 6500));
+	assert.equal(await page.evaluate(() => document.activeElement?.id), 'monitor-refresh-interval');
+	await waitForIdle(page, observed, 3000);
+
+	start = observed.polls.length;
+	changed = Date.now();
+	await select.selectOption('60');
+	await waitForPolls(page, observed.polls, start + 1, 2000);
+	assert(observed.polls[start] - changed < 1200);
+	await waitForIdle(page, observed, 3000);
+	await page.waitForTimeout(2200);
+	assert.equal(observed.polls.length, start + 1);
+	assert.equal(observed.maxConcurrentPolls, 1);
+
+	await select.selectOption('3');
+	await page.reload({ waitUntil: 'domcontentloaded' });
+	await intervalControl(page, 'Refresh Interval (seconds)');
+	Object.assign(results, {
+		intervalImmediateMaximum: 1200,
+		oneSecondIntervals,
+		fiveSecondIntervals,
+		intervalSixtySecondBoundary: true,
+		maxConcurrentPolls: observed.maxConcurrentPolls,
+		intervalReloadDefault: true
+	});
+	assert.equal(results.consoleErrors.length, 0);
+	assert.equal(results.pageErrors.length, 0);
 	await context.close();
 }
 
@@ -293,6 +387,7 @@ async function trafficFixture(browser) {
 
 	watch(page);
 	await login(page);
+	const refreshSelect = await intervalControl(page, 'Refresh Interval (seconds)');
 	await page.waitForTimeout(6500);
 	const tables = page.locator('table');
 	const summary = (await tables.nth(0).locator('tbody tr td:last-child').allTextContents()).map(value => value.trim());
@@ -338,9 +433,8 @@ async function trafficFixture(browser) {
 	await nextCPU('normal');
 	assert.equal((await cpuValue.innerText()).trim(), '20.00%');
 
-	const focusTarget = page.locator('a:visible').first();
-	await focusTarget.focus();
-	const focusHandle = await focusTarget.elementHandle();
+	await refreshSelect.focus();
+	const focusHandle = await refreshSelect.elementHandle();
 	await page.evaluate(element => { window.__fixtureFocus = element; }, focusHandle);
 	hotplug = true;
 	await page.waitForTimeout(3500);
@@ -426,6 +520,7 @@ async function soak(browser) {
 	const page = await context.newPage();
 	const observed = watch(page);
 	await login(page);
+	const refreshSelect = await intervalControl(page, 'Refresh Interval (seconds)');
 	await page.waitForTimeout(11000);
 
 	const tables = page.locator('table');
@@ -470,9 +565,8 @@ async function soak(browser) {
 	results.consoleErrors.length = 0;
 	results.pageErrors.length = 0;
 
-	const focusTarget = page.locator('a:visible').first();
-	await focusTarget.focus();
-	const focusHandle = await focusTarget.elementHandle();
+	await refreshSelect.focus();
+	const focusHandle = await refreshSelect.elementHandle();
 	await page.evaluate(element => { window.__monitorFocus = element; }, focusHandle);
 	const domBefore = await page.locator('*').count();
 	await page.waitForTimeout(11000);
@@ -532,15 +626,16 @@ async function soak(browser) {
 	});
 
 	try {
+		await intervalFixture(browser);
 		await trafficFixture(browser);
 		await sensorFixture(browser);
-		await smoke(browser, 'en-US', { width: 390, height: 844 }, 'Router Monitor',
+		await smoke(browser, 'en-US', { width: 390, height: 844 }, 'Router Monitor', 'Refresh Interval (seconds)',
 			[ 'Interface Name', 'Status', 'RX', 'TX', 'Total RX', 'Total TX', 'Connected Since' ],
 			'english-mobile');
-		await smoke(browser, 'zh-CN', { width: 1440, height: 1000 }, '监视器',
+		await smoke(browser, 'zh-CN', { width: 1440, height: 1000 }, '监视器', '刷新间隔（秒）',
 			[ '线路名称', '状态', '接收 (RX)', '发送 (TX)', '累计接收', '累计发送', '连接时间' ],
 			'chinese-desktop');
-		await smoke(browser, 'zh-CN', { width: 390, height: 844 }, '监视器',
+		await smoke(browser, 'zh-CN', { width: 390, height: 844 }, '监视器', '刷新间隔（秒）',
 			[ '线路名称', '状态', '接收 (RX)', '发送 (TX)', '累计接收', '累计发送', '连接时间' ],
 			'chinese-mobile');
 		await soak(browser);

@@ -12,7 +12,11 @@
 
 ## Runtime Contract
 
-- Refresh live data every three seconds through one LuCI `poll.add()` callback.
+- Refresh live data through one LuCI `poll.add()` callback. Default to three
+  seconds and expose a non-persistent native selector for every integer from
+  one through 60 seconds.
+- On an interval change, replace the registered interval and request one
+  immediate refresh. Reuse any in-flight refresh so requests never overlap.
 - Update existing text nodes in place. Rebuild a table body only when the set
   of interface or sensor keys changes. Never replace focused controls.
 - Read aggregate CPU counters from `/proc/stat`. Calculate multi-core CPU usage
@@ -55,23 +59,26 @@
   `KB` through `TB`, always with two decimals.
 - Derive connection start from router epoch minus interface uptime and render
   `YYYY-MM-DD HH:mm:ss` in the router's configured timezone.
-- Data is boot-session state only. Do not persist samples or counters.
+- Data is boot-session state only. Do not persist samples, counters, or the
+  selected refresh interval.
 
 ## Security And Repository Rules
 
 - RPC and filesystem permissions must be read-only and least-privilege.
 - Never store router credentials, host keys, APKs, screenshots, build output,
   or temporary test fixtures in Git.
-- Use `/home/ht/immortalwrt` as the authoritative build tree. Preserve all
-  unrelated local changes there and remove any temporary package symlink.
+- Do not use or modify `/home/ht/immortalwrt` for `v0.2`; the user withdrew it
+  as a supported build environment after deleting the original repository.
+  Use the existing GitHub Actions SDK matrix as the authoritative build path.
 - Use `apply_patch` for manual source edits. Keep code minimal and avoid
   speculative abstractions or unused compatibility paths.
 - Update this file when a verified behavior, constraint, or test result changes.
 
 ## Release Contract
 
-- The initial public release is `v0.1`; both `luci-app-monitor` and
-  `luci-i18n-monitor-zh-cn` use package version `0.1-r1`.
+- The initial public release is `v0.1`. The next release is `v0.2`; both
+  `luci-app-monitor` and `luci-i18n-monitor-zh-cn` use package version
+  `0.2-r1`.
 - Publish under Apache License 2.0 at
   `https://github.com/haitun001/luci-app-monitor`.
 - Keep `README.md` in Chinese and `README_EN.md` in English. Both documents
@@ -94,12 +101,15 @@
 
 - Validate JavaScript syntax, JSON, translations, LuCI i18n extraction, and
   package metadata.
-- Build the application and Simplified Chinese APK in the ImmortalWrt tree.
+- Build the application and Simplified Chinese packages in all six GitHub
+  Actions SDK targets. Use the successful ImmortalWrt master branch artifacts
+  for pre-tag router verification.
 - Install both packages on the supplied router and test the real LuCI page in
   English and Chinese at desktop and mobile sizes.
-- Verify three-second cadence, calculations, focus preservation, stable DOM
-  size, no console errors, and the temperature UI with an intercepted valid
-  lm-sensors JSON response.
+- Verify the default three-second cadence, immediate interval changes at the
+  one- and 60-second boundaries, calculations, selector focus preservation,
+  stable DOM size, no console errors, and the temperature UI with an
+  intercepted valid lm-sensors JSON response.
 - Complete an eight-minute browser soak and record request intervals, DOM size,
   console errors, and forced-GC heap before and after. Run a 30-minute soak only
   when the user explicitly requests that duration.
@@ -281,3 +291,17 @@
   stable values, console errors, or page errors. All three self-terminating
   27-second load processes exited with code 0; exact-PID and marker checks
   confirmed no router-side test process remained, and no package was installed.
+- 2026-08-23: The `v0.2` contract is locked before implementation: add one
+  native, non-persistent one-to-60-second refresh selector before the summary,
+  default it to three seconds, apply changes immediately without overlapping
+  requests, publish bilingual release notes, and retain the eight-minute
+  routine soak requirement.
+- 2026-08-23: The user withdrew `/home/ht/immortalwrt` as a usable build
+  environment. A path with source-shaped files still exists locally, but its
+  provenance and completeness are not trusted. `v0.2` will use branch CI SDK
+  artifacts for router verification before its release tag is created.
+- 2026-08-23: The minimal `v0.2` selector, guarded dynamic poll registration,
+  `0.2-r1` metadata, bilingual catalogs and documentation, versioned changelog,
+  Release-note extraction, and browser assertions are implemented. JavaScript,
+  JSON, YAML, gettext, upstream LuCI i18n extraction, metadata, and Git
+  whitespace checks pass; SDK builds and router verification are pending.
