@@ -249,3 +249,24 @@
   `package/luci-app-monitor/download` target. The feed root is now the checkout
   parent, placing `luci-app-monitor/Makefile` one directory below it as the SDK
   feed scanner requires.
+- 2026-08-23: Branch CI run `32614919777` verifies the feed-root correction.
+  Metadata validation and all six OpenWrt/ImmortalWrt SDK jobs built, collected
+  exactly two packages, and uploaded their artifacts successfully.
+- 2026-08-23: Annotated tag `v0.1` points to `1fabc2b`. Tag CI run
+  `32615203399` passed all six SDK builds and published the non-draft,
+  non-prerelease GitHub Release. Its assets are exactly 12 target-prefixed
+  packages plus `SHA256SUMS`; downloading all 13 assets and checking the file
+  verifies every package checksum.
+- 2026-08-23: The target router replaced the local build with the downloaded
+  ImmortalWrt master Release packages. Router-side SHA-256 and `apk verify`
+  pass before installation; the installed APK source is `/feed/luci-app-monitor`,
+  and the view, menu, ACL, and Chinese LMO hashes match the Release manifests.
+- 2026-08-23: The Release runtime passed the full deterministic fixture suite,
+  bilingual desktop/mobile checks, and an eight-minute soak: 169 system
+  samples, 2985-3015 ms intervals (2999.994 ms average), DOM count 211
+  before/after/maximum, forced-GC heap 3031900 -> 2981944 bytes, zero console
+  errors, zero page errors, preserved focus, and one sensors request. All six
+  screenshots were visually checked without overflow, overlap, truncation, or
+  column mismatch. Router APKs and local build/test artifacts were removed;
+  only the two installed packages remain, and the ImmortalWrt tree retains
+  exactly its four pre-existing Git status entries with an unchanged `.config`.
