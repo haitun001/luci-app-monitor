@@ -157,6 +157,7 @@ async function intervalFixture(browser) {
 	const select = await intervalControl(page, 'Refresh Interval (seconds)');
 	await waitForIdle(page, observed, 3000);
 	observed.maxConcurrentPolls = 0;
+	await select.focus();
 
 	let start = observed.polls.length;
 	let changed = Date.now();

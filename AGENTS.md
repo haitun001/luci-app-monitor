@@ -305,3 +305,18 @@
   Release-note extraction, and browser assertions are implemented. JavaScript,
   JSON, YAML, gettext, upstream LuCI i18n extraction, metadata, and Git
   whitespace checks pass; SDK builds and router verification are pending.
+- 2026-08-23: Branch CI run `32636576506` passed metadata validation and all
+  six OpenWrt/ImmortalWrt SDK builds, each collecting and uploading exactly two
+  `0.2-r1` packages. Its ImmortalWrt master APKs were installed on the router;
+  package versions and archive-to-installed-file hashes pass. The first browser
+  preflight stopped because Playwright `selectOption()` had not focused the
+  selector before the focus-preservation assertion; the test now establishes
+  focus explicitly, and runtime verification remains pending.
+- 2026-08-23: The corrected full-suite browser preflight passes. Measured
+  one-second intervals were 991-1015 ms and five-second intervals were
+  4995-5010 ms; the 60-second boundary produced only its immediate request,
+  maximum concurrent system requests were one, and reload restored three
+  seconds. DOM count stayed at 275, forced-GC heap changed by 6616 bytes, focus
+  survived refreshes and row hotplug, and console/page errors were zero. All
+  six English/Chinese desktop/mobile, traffic, and sensor screenshots were
+  visually checked without overflow, overlap, truncation, or misalignment.
