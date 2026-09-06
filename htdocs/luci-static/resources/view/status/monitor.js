@@ -24,14 +24,14 @@ var callNetworkDevices = rpc.declare({
 	expect: { '': {} }
 });
 
-function loadSnapshot(withSensors) {
+function loadSnapshot(withSensors, withConnections) {
 	return Promise.all([
 		L.resolveDefault(callSystemInfo(), {}),
 		L.resolveDefault(callInterfaceDump(), []),
 		L.resolveDefault(callNetworkDevices(), {}),
 		L.resolveDefault(fs.read('/proc/stat'), null),
 		withSensors ? L.resolveDefault(fs.exec('/usr/sbin/sensors', [ '-j', '-A' ]), null) : null,
-		L.resolveDefault(fs.read_direct('/proc/net/nf_conntrack'), null)
+		withConnections ? L.resolveDefault(fs.read_direct('/proc/net/nf_conntrack'), null) : null
 	]);
 }
 
@@ -549,7 +549,7 @@ return view.extend({
 			uci.load('system'),
 			uci.load('network'),
 			uci.load('firewall'),
-			loadSnapshot(true)
+			loadSnapshot(true, false)
 		]);
 	},
 
@@ -707,7 +707,7 @@ return view.extend({
 		if (this.refreshRequest)
 			return this.refreshRequest;
 
-		this.refreshRequest = loadSnapshot(this.pollSensors).then(L.bind(function(snapshot) {
+		this.refreshRequest = loadSnapshot(this.pollSensors, true).then(L.bind(function(snapshot) {
 			this.update(snapshot);
 		}, this)).finally(L.bind(function() {
 			this.refreshRequest = null;

@@ -165,6 +165,17 @@
   concurrent poll and connection-read requests are both one. Installed-package
   bilingual and eight-minute runtime verification remain pending.
 
+- 2026-09-06: Final-source browser verification reproduced an initialization
+  race: `load()` and LuCI's first poll could overlap two conntrack reads before
+  the refresh lock was established. Initial snapshots now omit conntrack and
+  the single poll callback owns that read. The full source-overridden suite
+  passes with one concurrent poll and one concurrent conntrack read, 4004
+  fixture records, 853186-byte real reads, 1-second intervals of 999-1006 ms,
+  5-second intervals of 5001-5005 ms, 3-second soak intervals of 2988-3008 ms,
+  DOM 414 before/after, heap delta +20884 bytes, and zero console/page errors.
+  The existing `v0.3` Release was created before this correction and must be
+  replaced after the new branch and tag CI runs; corrected package runtime
+  verification is pending.
 - 2026-08-22: Contract created before implementation. Runtime behavior and
   acceptance criteria are locked.
 - 2026-08-22: Verified on the target router that configured rows are `lan`,

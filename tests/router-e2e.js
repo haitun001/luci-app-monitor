@@ -39,6 +39,7 @@ function calls(body) {
 
 function watch(page) {
 	const polls = [], sensorRequests = [], sensorReplies = [];
+	const activeConnectionRequests = new Set();
 	const observed = { polls, sensorRequests, sensorReplies, activePolls: 0, maxConcurrentPolls: 0,
 		activeConnections: 0, maxConcurrentConnections: 0, connectionBytes: [] };
 	const isPoll = request => calls(request.postData()).some(call =>
@@ -53,7 +54,8 @@ function watch(page) {
 	page.on('pageerror', error => results.pageErrors.push(error.message));
 	page.on('request', request => {
 		const batch = calls(request.postData());
-		if (isConnections(request)) {
+		if (isConnections(request) && !activeConnectionRequests.has(request)) {
+			activeConnectionRequests.add(request);
 			observed.activeConnections++;
 			observed.maxConcurrentConnections = Math.max(observed.maxConcurrentConnections, observed.activeConnections);
 		}
@@ -88,7 +90,7 @@ function watch(page) {
 	const finish = request => {
 		if (isPoll(request))
 			observed.activePolls--;
-		if (isConnections(request))
+		if (isConnections(request) && activeConnectionRequests.delete(request))
 			observed.activeConnections--;
 	};
 	page.on('requestfinished', finish);
