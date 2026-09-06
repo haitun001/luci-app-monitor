@@ -30,6 +30,9 @@
   and failed/malformed reads show '-'; disconnected rows show zero.
 - Update existing text nodes in place. Rebuild a table body only when the set
   of interface or sensor keys changes. Never replace focused controls.
+- Use native HTML fallback labels when a mobile theme hides table headings
+  without supplying data-title labels. Keep summary rows full-width and use
+  the theme's own styles; no custom CSS is needed.
 - Read aggregate CPU counters from `/proc/stat`. Calculate multi-core CPU usage
   from consecutive `cpu` samples, counting idle and iowait as idle. A first,
   malformed, reset, or non-increasing sample displays `-`.
@@ -151,6 +154,16 @@
   malformed/empty recovery, 18 network rows, hotplug, CPU sampling and a WAN
   counter reset. Its desktop screenshot has no overlap or overflow. SDK builds
   and installed-package bilingual/soak verification are pending.
+- 2026-09-06: Branch CI run `34005487219` passed validation and all six SDK
+  builds for `fea9055`. Mobile inspection exposed Material hiding both table
+  headings and pseudo labels. Native fallback labels and ordinary summary
+  table markup fix the layout; the shared cell helper also avoids rendering
+  null child placeholders as text. The corrected source preflight passes
+  mobile layout, interval changes, shared slow reads, the 4004-record traffic
+  fixture and sensor retries, with no console/page errors. Measured intervals
+  are 988-1006 ms at one second and 4996-4998 ms at five seconds; maximum
+  concurrent poll and connection-read requests are both one. Installed-package
+  bilingual and eight-minute runtime verification remain pending.
 
 - 2026-08-22: Contract created before implementation. Runtime behavior and
   acceptance criteria are locked.

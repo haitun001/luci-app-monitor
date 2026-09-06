@@ -153,7 +153,7 @@ async function smoke(browser, locale, viewport, expectedTitle, expectedIntervalL
 	assert.equal((await page.locator('h2').innerText()).trim(), expectedTitle);
 	await intervalControl(page, expectedIntervalLabel);
 	const table = page.locator('table').nth(1);
-	const labels = (await table.locator('tbody tr td:first-child').allTextContents()).map(value => value.trim());
+	const labels = (await table.locator('tbody tr td:first-child [data-monitor-value]').allTextContents()).map(value => value.trim());
 	assert(labels.length > 1);
 	assert.equal(new Set(labels).size, labels.length);
 	assert(labels.some(label => label.includes('(br-lan)')));
@@ -161,6 +161,13 @@ async function smoke(browser, locale, viewport, expectedTitle, expectedIntervalL
 	assert.deepEqual((await table.locator('thead th').allTextContents()).map(value => value.trim()), expectedHeaders);
 	assert.equal(await table.locator('tbody tr td[data-title]').count(), labels.length * 8);
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+	if (viewport.width < 600) {
+		assert.equal(await table.locator('tbody tr td').evaluateAll(cells => cells.every(cell =>
+			!cell.firstElementChild.hidden || ![ 'none', 'normal', '""' ].includes(getComputedStyle(cell, '::before').content))), true);
+		const summaryWidth = await page.locator('table').first().evaluate(table =>
+			table.querySelector('tbody').getBoundingClientRect().width / table.getBoundingClientRect().width);
+		assert(summaryWidth > 0.95, 'Summary rows must fill the mobile table');
+	}
 	assert.equal(results.consoleErrors.length, 0);
 	assert.equal(results.pageErrors.length, 0);
 	await screenshot(page, name);
@@ -230,6 +237,7 @@ async function intervalFixture(browser) {
 	await page.unroute('**/cgi-download*');
 
 	await select.selectOption('3');
+	await waitForIdle(page, observed, 3000);
 	await page.reload({ waitUntil: 'domcontentloaded' });
 	await intervalControl(page, 'Refresh Interval (seconds)');
 	Object.assign(results, {
@@ -456,7 +464,7 @@ async function trafficFixture(browser) {
 	const tables = page.locator('table');
 	const summary = (await tables.nth(0).locator('tbody tr td:last-child').allTextContents()).map(value => value.trim());
 	const rows = await tables.nth(1).locator('tbody tr').evaluateAll(items => items.map(row =>
-		Array.from(row.cells, cell => cell.textContent.trim())));
+		Array.from(row.cells, cell => cell.querySelector('[data-monitor-value]').textContent.trim())));
 	const n = sample;
 	const byLabel = Object.fromEntries(rows.map(row => [ row[0], row ]));
 
@@ -511,8 +519,8 @@ async function trafficFixture(browser) {
 		connections = data;
 		await waitForPolls(page, { get length() { return connectionReads; } }, before + 1, 5000);
 		await page.waitForTimeout(300);
-		assert.equal((await tables.nth(1).locator('tbody tr').filter({ hasText: /^lan \(br-lan\)/ }).locator('td').nth(2).innerText()).trim(), expectedLan);
-		assert.equal((await tables.nth(1).locator('tbody tr').filter({ hasText: /^wan\/wan6/ }).locator('td').nth(2).innerText()).trim(), expectedWan);
+		assert.equal((await tables.nth(1).locator('tbody tr').filter({ hasText: /lan \(br-lan\)/ }).locator('td').nth(2).innerText()).trim(), expectedLan);
+		assert.equal((await tables.nth(1).locator('tbody tr').filter({ hasText: /wan\/wan6/ }).locator('td').nth(2).innerText()).trim(), expectedWan);
 	}
 	await nextCPU('reset');
 	assert.equal((await cpuValue.innerText()).trim(), '-');
@@ -532,8 +540,8 @@ async function trafficFixture(browser) {
 	assert.equal(await page.evaluate(() => document.activeElement === window.__fixtureFocus), true);
 	resetLan1 = true;
 	await page.waitForTimeout(3500);
-	const resetRow = await tables.nth(1).locator('tbody tr').filter({ hasText: /^lan1/ }).evaluate(row =>
-		Array.from(row.cells, cell => cell.textContent.trim()));
+	const resetRow = await tables.nth(1).locator('tbody tr').filter({ hasText: /lan1Status/ }).evaluate(row =>
+		Array.from(row.cells, cell => cell.querySelector('[data-monitor-value]').textContent.trim()));
 	assert.equal(resetRow[3], '0.00 KB/s');
 	assert.equal(resetRow[4], '0.00 KB/s');
 	resetWan = true;
@@ -619,7 +627,7 @@ async function soak(browser) {
 	const tables = page.locator('table');
 	const summary = (await tables.nth(0).locator('tbody tr td:last-child').allTextContents()).map(value => value.trim());
 	const rows = await tables.nth(1).locator('tbody tr').evaluateAll(items => items.map(row =>
-		Array.from(row.cells, cell => cell.textContent.trim())));
+		Array.from(row.cells, cell => cell.querySelector('[data-monitor-value]').textContent.trim())));
 
 	assert.match(summary[0], /^\d+(?:\.\d+)?%$/);
 	assert.match(summary[1], /^\d+\.\d{2}%$/);

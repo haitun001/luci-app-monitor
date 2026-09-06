@@ -509,18 +509,21 @@ function parseSensors(result) {
 
 function valueCell(nodes, key, title) {
 	var value = document.createTextNode('-'),
-	    attributes = { 'class': 'td left' };
+	    attributes = { 'class': title == null ? 'left' : 'td left' };
 
 	nodes[key] = value;
 	if (title != null)
 		attributes['data-title'] = title;
 
-	return E('td', attributes, value);
+	return E('td', attributes, title == null ? value : [
+		E('div', { 'hidden': true, 'aria-hidden': true }, E('strong', title)),
+		E('span', { 'data-monitor-value': '' }, value)
+	]);
 }
 
 function valueRow(label, nodes, key) {
-	return E('tr', { 'class': 'tr' }, [
-		E('td', { 'class': 'td left', 'width': '33%' }, label),
+	return E('tr', {}, [
+		E('td', { 'class': 'left', 'width': '33%' }, label),
 		valueCell(nodes, key)
 	]);
 }
@@ -568,6 +571,15 @@ return view.extend({
 				valueCell(nodes, 'connected', _('Connected Since', 'luci-app-monitor'))
 			]);
 		}, this)));
+		this.updateTableLabels();
+	},
+
+	updateTableLabels: function() {
+		var hidden = getComputedStyle(this.interfaceTable.querySelector('thead tr')).display == 'none';
+		this.interfaceBody.querySelectorAll('td').forEach(function(cell) {
+			var content = getComputedStyle(cell, '::before').content;
+			cell.firstElementChild.hidden = !hidden || (content != 'none' && content != 'normal' && content != '""');
+		});
 	},
 
 	updateSensors: function(result) {
@@ -779,9 +791,9 @@ return view.extend({
 				}, _('Refresh Interval (seconds)', 'luci-app-monitor')),
 				E('div', { 'class': 'cbi-value-field' }, intervalSelect)
 			]),
-			E('table', { 'class': 'table' }, [ summaryBody, this.sensorBody ]),
+			E('table', {}, [ summaryBody, this.sensorBody ]),
 			E('h3', _('Interfaces', 'luci-app-monitor')),
-			E('table', { 'class': 'table' }, [
+			this.interfaceTable = E('table', { 'class': 'table' }, [
 				E('thead', {}, E('tr', { 'class': 'tr table-titles' }, [
 					E('th', { 'class': 'th left' }, _('Interface Name', 'luci-app-monitor')),
 					E('th', { 'class': 'th left' }, _('Status', 'luci-app-monitor')),
@@ -796,6 +808,11 @@ return view.extend({
 			])
 		]);
 
+		if (this.tableLabelCallback)
+			window.removeEventListener('resize', this.tableLabelCallback);
+		this.tableLabelCallback = L.bind(this.updateTableLabels, this);
+		window.addEventListener('resize', this.tableLabelCallback);
+		requestAnimationFrame(this.tableLabelCallback);
 		this.update(data[3]);
 		poll.add(this.pollCallback, this.pollInterval);
 

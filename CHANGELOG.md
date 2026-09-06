@@ -8,6 +8,8 @@
 - 修复单个 WAN 设备计数回退导致汇总速率不准确，以及已连接但没有默认路由的有效 WAN 成员被遗漏的问题。
 - Fix WAN rate aggregation when one device counter resets, and include
   eligible connected WAN members without a default route.
+- 修复 Material 主题移动端列名缺失和摘要表格宽度异常。
+- Fix missing mobile column labels and summary table width in Material theme.
 
 ## v0.2
 
