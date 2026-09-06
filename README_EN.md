@@ -3,7 +3,7 @@
 [中文](README.md)
 
 luci-app-monitor is a read-only real-time LuCI monitor for OpenWrt and
-ImmortalWrt. After installation, open it at Status -> Monitor.
+ImmortalWrt. After installation, open it at Status -> Router Monitor.
 
 ## Features
 
@@ -20,6 +20,11 @@ ImmortalWrt. After installation, open it at Status -> Monitor.
 - The interface table includes netifd interfaces and Linux network devices with
   byte counters, including physical NICs, bridges, VLAN, PPP, WireGuard, TUN,
   TAP, GRE, and VETH devices.
+- Connected rows show their IPv4 addresses below the status. Merged rows label
+  each connected logical interface's addresses, keeping PPP and lower-device
+  management addresses distinct. Unbound devices show their own addresses.
+  Rows without IPv4, connecting rows, and disconnected rows show only status;
+  IPv6 and stale addresses are not displayed.
 - The Connections column after Status counts TCP, UDP, and other bidirectional
   conntrack records, including tracked TIME_WAIT states. Each record counts
   once per row; traffic traversing different networks can count in both rows.
@@ -33,7 +38,7 @@ ImmortalWrt. After installation, open it at Status -> Monitor.
   device direction for every row. A LAN bridge row is not rewritten from a
   client-relative point of view.
 - Rates automatically use KB/s, MB/s, or GB/s. Totals use KB, MB, GB, or TB.
-  Values have two decimal places, and connection times use the router timezone.
+  Values have two decimal places, and connection start times use the router timezone.
 
 All data comes from kernel counters for the current router boot. The package has
 no daemon, database, configuration file, or persistent history.
@@ -77,52 +82,43 @@ family and series.
 | immortalwrt-25.12.1 | APK |
 | immortalwrt-master | APK |
 
-This example directly downloads the v0.3 ImmortalWrt 25.12.1 packages and
-checks them against the published SHA-256 file:
+### ImmortalWrt 25.12.1 install or upgrade command
+
+Run this single command as root on an ImmortalWrt 25.12.1 router with LuCI
+already installed. It downloads the v0.4 application and Simplified Chinese
+packages from GitHub into a private /tmp directory, verifies both SHA-256
+checksums, then allows untrusted package signatures and replaces an existing
+version. It cleans its downloads on success, failure, or a catchable interrupt
+without matching unrelated APKs elsewhere in /tmp.
 
 ~~~sh
-wget https://github.com/haitun001/luci-app-monitor/releases/download/v0.3/immortalwrt-25.12.1-luci-app-monitor-0.3-r1.apk
-wget https://github.com/haitun001/luci-app-monitor/releases/download/v0.3/immortalwrt-25.12.1-luci-i18n-monitor-zh-cn-0.3-r1.apk
-wget https://github.com/haitun001/luci-app-monitor/releases/download/v0.3/SHA256SUMS
-grep ' immortalwrt-25.12.1-' SHA256SUMS | sha256sum -c -
+(set -eu; dir=$(mktemp -d /tmp/luci-monitor-v0.4.XXXXXX); trap 'rm -f "$dir"/*.apk "$dir/SHA256SUMS" "$dir/CHECKSUMS"; rmdir "$dir"' EXIT; trap 'exit 1' HUP INT TERM; cd "$dir"; base=https://github.com/haitun001/luci-app-monitor/releases/download/v0.4; app=immortalwrt-25.12.1-luci-app-monitor-0.4-r1.apk; zh=immortalwrt-25.12.1-luci-i18n-monitor-zh-cn-0.4-r1.apk; for file in "$app" "$zh" SHA256SUMS; do wget -T 60 -O "$file" "$base/$file"; done; awk -v a="$app" -v z="$zh" '$2==a || $2==z {count[$2]++; print} END {exit(count[a]!=1 || count[z]!=1)}' SHA256SUMS > CHECKSUMS; sha256sum -c CHECKSUMS; apk add --allow-untrusted --force-reinstall --no-network --repositories-file /dev/null "$dir/$app" "$dir/$zh")
 ~~~
 
-Transfer the two verified files to the router:
+The command requires HTTPS access to GitHub. It bypasses package-signature
+trust only, retaining HTTPS and SHA-256 verification. It does not change
+repositories, upgrade unrelated software, or use --force-depends.
 
-~~~sh
-scp immortalwrt-25.12.1-*.apk root@192.168.1.1:/tmp/
-~~~
+For other firmware, download both matching packages, verify them with
+SHA256SUMS, and transfer them to a dedicated temporary directory. Use
+`opkg install` on 24.10, or `apk add --allow-untrusted` on 25.12, Snapshot,
+and master, followed by the two explicit local package paths. After installation,
+remove only those files and the directory you created. Do not mix firmware
+families or series.
 
-OpenWrt/ImmortalWrt 24.10 uses opkg:
-
-~~~sh
-opkg install /tmp/*-24.10.*.ipk
-rm -f /tmp/*-24.10.*.ipk
-~~~
-
-OpenWrt/ImmortalWrt 25.12, Snapshot, and master use apk. Release packages are
-not signed with your firmware's package key, so explicitly allow the local
-untrusted package:
-
-~~~sh
-apk add --allow-untrusted /tmp/*.apk
-rm -f /tmp/*.apk
-~~~
-
-Log in to LuCI again and open Status -> Monitor. Do not use --force-depends,
-and do not mix artifacts from different firmware families or series.
+Refresh or log in to LuCI again and open Status -> Router Monitor.
 
 ## Compatibility and verification
 
 - Supports LuCI-equipped OpenWrt and ImmortalWrt 24.10 and later.
-- The v0.3 CI matrix builds OpenWrt 24.10.8, 25.12.5, and Snapshot, plus
+- The v0.4 CI matrix builds OpenWrt 24.10.8, 25.12.5, and Snapshot, plus
   ImmortalWrt 24.10.6, 25.12.1, and master.
 - The IPK main package is all and APK is noarch. CPU architecture is generally
   not a restriction, but firmware family, release series, and package manager
   must match.
-- The v0.3 runtime validation target is the supplied x86_64 ImmortalWrt 25.12.1
+- The v0.4 runtime validation target is the supplied x86_64 ImmortalWrt 25.12.1
   router: English/Chinese desktop and mobile rendering, read-only permissions,
-  connection counts, traffic directions, refresh cadence, focus preservation,
+  IPv4 address ownership, connection counts, traffic directions, refresh cadence, focus preservation,
   and an eight-minute three-second soak. Other targets receive SDK build
   verification, without a claim of hardware testing for this release.
 - Connection records are retained only for the current refresh. Total RX/TX
@@ -139,7 +135,9 @@ push main, wait for all six CI builds to pass, then push a v* tag matching
 PKG_VERSION. The tag workflow rebuilds 12 packages, generates SHA256SUMS, and
 creates the GitHub Release with the matching changelog entry.
 
-Run local logic checks with `node tests/monitor-unit.js`. The real-page suite
+Run local logic checks with `node tests/monitor-unit.js`, and use
+`node tests/install-command.js` with a POSIX shell to check installer validation
+and cleanup on failure. The real-page suite
 is `tests/router-e2e.js`; provide the router URL, credentials, Chrome path, and
 an output directory outside the repository through environment variables. The
 default soak is eight minutes. Install matching firmware-series branch

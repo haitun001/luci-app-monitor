@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.4
+
+- 已连接线路的状态下方显示 IPv4 地址；合并线路按逻辑接口标注全部已连接成员的地址，断线后清除旧地址。
+- Show IPv4 addresses below connected status, label each connected member in
+  merged rows, and clear stale addresses after disconnection.
+- 核对全部中英文词条，明确路由器监控、下载和上传速度、连接中及连接开始时间的表述。
+- Review every English and Simplified Chinese string and clarify monitoring,
+  download/upload speed, connecting status, and connection start time labels.
+- 新增 ImmortalWrt 25.12.1 的单行安装与覆盖升级命令，校验两个包的 SHA-256、允许未受信任签名并自动清理独立临时目录。
+- Add an ImmortalWrt 25.12.1 install/upgrade command that verifies both package
+  checksums, allows untrusted signatures, and cleans its private temporary directory.
+
 ## v0.3
 
 - 在线路状态右侧新增连接数，统计完整 conntrack 表中的双向会话；无法可靠归属时显示 `-`。

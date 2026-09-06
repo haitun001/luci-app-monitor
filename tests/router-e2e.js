@@ -146,6 +146,17 @@ async function waitForIdle(page, observed, timeout) {
 	assert.equal(observed.activeConnections, 0, 'Timed out waiting for the connection read to finish');
 }
 
+async function tableLayout(page) {
+	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+	assert.equal(await page.locator('[data-monitor-value]').evaluateAll(values => values.every(value => {
+		const cell = value.closest('td').getBoundingClientRect();
+		const range = document.createRange();
+		range.selectNodeContents(value);
+		return Array.from(range.getClientRects()).every(rect => !rect.width ||
+			(rect.left >= cell.left - 1 && rect.right <= cell.right + 1));
+	})), true, 'Values must wrap within their own cells');
+}
+
 async function smoke(browser, locale, viewport, expectedTitle, expectedIntervalLabel, expectedHeaders, name) {
 	const context = await browser.newContext({ locale, viewport });
 	const page = await context.newPage();
@@ -162,7 +173,12 @@ async function smoke(browser, locale, viewport, expectedTitle, expectedIntervalL
 	assert(labels.some(label => label.includes('(eth4)') && /(?:^|\/)wan(?:\/| )/.test(label)));
 	assert.deepEqual((await table.locator('thead th').allTextContents()).map(value => value.trim()), expectedHeaders);
 	assert.equal(await table.locator('tbody tr td[data-title]').count(), labels.length * 8);
-	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+	await tableLayout(page);
+	const chinese = locale === 'zh-CN';
+	assert.equal(await page.getByText(chinese ? '下载速度' : 'Download Speed', { exact: true }).count(), 1);
+	assert.equal(await page.getByText(chinese ? '上传速度' : 'Upload Speed', { exact: true }).count(), 1);
+	const lanStatus = table.locator('tbody tr').filter({ hasText: /lan \(br-lan\)/ }).locator('td').nth(1);
+	assert((await lanStatus.innerText()).includes(chinese ? 'IP 地址：10.0.1.1' : 'IP Address: 10.0.1.1'));
 	if (viewport.width < 600) {
 		assert.equal(await table.locator('tbody tr td').evaluateAll(cells => cells.every(cell =>
 			!cell.firstElementChild.hidden || ![ 'none', 'normal', '""' ].includes(getComputedStyle(cell, '::before').content))), true);
@@ -290,6 +306,12 @@ async function trafficFixture(browser) {
 		{ interface: 'wgwan', up: true, dynamic: false, uptime: 820, l3_device: 'wg0',
 			route: [ { target: '0.0.0.0', mask: 0 } ] }
 	];
+	for (const [ name, ips ] of Object.entries({
+		lan: [ '192.168.1.1', '192.168.1.1' ], guest: [ '192.168.2.1' ],
+		wan: [ '203.0.113.2' ], wan2: [ '198.51.100.2' ], wan2v6: [ '198.51.100.3' ],
+		downlan: [ '192.168.3.1' ]
+	}))
+		interfaces.find(info => info.interface === name)['ipv4-address'] = ips.map(address => ({ address }));
 	const networkValues = Object.fromEntries([
 		'loopback', 'downlan', 'guest', 'iot', 'lan', 'modem', 'vpn',
 		'wan', 'wan6', 'wan2', 'wan2v6', 'wgwan'
@@ -437,6 +459,7 @@ async function trafficFixture(browser) {
 				deviceData['br-guest'].ipaddrs = [ { address: '192.168.2.1', netmask: '255.255.255.0' } ];
 				deviceData['pppoe-wan'].ipaddrs = [ { address: '203.0.113.2', netmask: '255.255.255.255' } ];
 				deviceData.eth5.ipaddrs = [ { address: '198.51.100.2', netmask: '255.255.255.0' } ];
+				deviceData.usb0.ipaddrs = [ { address: '198.18.0.1', netmask: '255.255.255.0' } ];
 				if (resetWan)
 					deviceData.eth4.stats = { rx_bytes: 2 * MiB, tx_bytes: MiB };
 				item.result = [ 0, deviceData ];
@@ -500,6 +523,12 @@ async function trafficFixture(browser) {
 	assert.equal(byLabel['wan/wan6 (eth4)'][2], '4001');
 	assert.equal(byLabel['wan2/wan2v6 (eth5)'][2], '1');
 	assert.equal(byLabel['lan1'][2], '-');
+	assert.equal(byLabel['lan (br-lan)'][1], 'ConnectedIP Address: 192.168.1.1');
+	assert.equal(byLabel['wan/wan6 (eth4)'][1], 'ConnectedIP Address: wan (203.0.113.2)');
+	assert.equal(byLabel['wan2/wan2v6 (eth5)'][1],
+		'ConnectedIP Address: wan2 (198.51.100.2), wan2v6 (198.51.100.3)');
+	assert.equal(byLabel['usb0'][1], 'ConnectedIP Address: 198.18.0.1');
+	assert.equal(byLabel['lan1'][1], 'Connected');
 	assert(connectionData.length > 256 * 1024);
 	results.connectionFixtureBytes = connectionData.length;
 	results.connectionFixtureRecords = 4004;
@@ -556,7 +585,35 @@ async function trafficFixture(browser) {
 		'One WAN reset must not erase the rates of the other WAN devices');
 	assert.equal(results.consoleErrors.length, 0);
 	assert.equal(results.pageErrors.length, 0);
+	await tableLayout(page);
 	await screenshot(page, 'traffic-fixture');
+	const lan = interfaces.find(info => info.interface === 'lan');
+	const lanStatus = tables.nth(1).locator('tbody tr').filter({ hasText: /lan \(br-lan\)/ }).locator('td').nth(1);
+	const addressNode = await lanStatus.evaluateHandle(cell => cell.querySelector('[data-monitor-value] > span').lastChild);
+	const domBefore = await page.locator('*').count();
+	for (const [ up, pending, ips, expected ] of [
+		[ true, false, [ '192.168.1.20', '192.168.1.30' ], 'Connected\nIP Address: 192.168.1.20, 192.168.1.30' ],
+		[ false, false, [ '192.168.1.20' ], 'Disconnected' ],
+		[ false, true, [ '192.168.1.20' ], 'Connecting' ],
+		[ true, false, [], 'Connected' ],
+		[ true, false, [ '192.168.1.1' ], 'Connected\nIP Address: 192.168.1.1' ]
+	]) {
+		Object.assign(lan, { up, pending, 'ipv4-address': ips.map(address => ({ address })) });
+		await page.waitForTimeout(3500);
+		assert.equal((await lanStatus.innerText()).trim(), expected);
+		assert.equal(await lanStatus.evaluate((cell, previous) =>
+			cell.querySelector('[data-monitor-value] > span').lastChild === previous, addressNode), true);
+		assert.equal(await page.locator('*').count(), domBefore);
+		assert.equal(await page.evaluate(() => document.activeElement === window.__fixtureFocus), true);
+	}
+	await addressNode.dispose();
+	await page.setViewportSize({ width: 360, height: 800 });
+	await page.reload({ waitUntil: 'domcontentloaded' });
+	await page.locator('h2').waitFor({ state: 'visible' });
+	await page.waitForTimeout(3500);
+	await tableLayout(page);
+	await screenshot(page, 'address-fixture-mobile');
+	results.addressChangesPreserveDOM = true;
 	await page.unrouteAll({ behavior: 'wait' });
 	await context.close();
 }
@@ -747,11 +804,11 @@ async function soak(browser) {
 		await smoke(browser, 'en-US', { width: 390, height: 844 }, 'Router Monitor', 'Refresh Interval (seconds)',
 			[ 'Interface Name', 'Status', 'Connections', 'RX', 'TX', 'Total RX', 'Total TX', 'Connected Since' ],
 			'english-mobile');
-		await smoke(browser, 'zh-CN', { width: 1440, height: 1000 }, '监视器', '刷新间隔（秒）',
-			[ '线路名称', '状态', '连接数', '接收 (RX)', '发送 (TX)', '累计接收', '累计发送', '连接时间' ],
+		await smoke(browser, 'zh-CN', { width: 1440, height: 1000 }, '路由器监控', '刷新间隔（秒）',
+			[ '线路名称', '状态', '连接数', '接收 (RX)', '发送 (TX)', '累计接收', '累计发送', '连接开始时间' ],
 			'chinese-desktop');
-		await smoke(browser, 'zh-CN', { width: 390, height: 844 }, '监视器', '刷新间隔（秒）',
-			[ '线路名称', '状态', '连接数', '接收 (RX)', '发送 (TX)', '累计接收', '累计发送', '连接时间' ],
+		await smoke(browser, 'zh-CN', { width: 390, height: 844 }, '路由器监控', '刷新间隔（秒）',
+			[ '线路名称', '状态', '连接数', '接收 (RX)', '发送 (TX)', '累计接收', '累计发送', '连接开始时间' ],
 			'chinese-mobile');
 		await soak(browser);
 	}

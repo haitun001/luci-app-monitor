@@ -3,7 +3,7 @@
 ## Scope
 
 - Build only the LuCI application named by this directory: `luci-app-monitor`.
-- Register one read-only page at `Status -> Monitor` (`/admin/status/monitor`).
+- Register one read-only page at `Status -> Router Monitor` (`/admin/status/monitor`).
 - Keep the implementation native to LuCI and OpenWrt. Do not add daemons,
   databases, configuration pages, history, custom CSS, or runtime dependencies
   beyond `luci-base`.
@@ -35,6 +35,14 @@
 - Use native HTML fallback labels when a mobile theme hides table headings
   without supplying data-title labels. Keep summary rows full-width and use
   the theme's own styles; no custom CSS is needed.
+- Connected status includes IPv4 addresses from each active netifd logical
+  member's ipv4-address list. Merged rows label each member; raw rows use
+  their own getNetworkDevices ipaddrs. Deduplicate within each member and
+  sort by interface/address. Never borrow a lower device's management IP,
+  gateway or PPP peer address for another logical member. Hide addresses
+  when disconnected, connecting or without valid IPv4; do not display IPv6.
+- Keep status/address text nodes stable as addresses change. Translate all
+  static labels, including mobile labels, menu and ACL descriptions.
 - Read aggregate CPU counters from `/proc/stat`. Calculate multi-core CPU usage
   from consecutive `cpu` samples, counting idle and iowait as idle. A first,
   malformed, reset, or non-increasing sample displays `-`.
@@ -94,9 +102,9 @@
 
 ## Release Contract
 
-- The initial public release is `v0.1`. The current public release is `v0.3`; both
+- The initial public release is `v0.1`. The next release is `v0.4`; both
   `luci-app-monitor` and `luci-i18n-monitor-zh-cn` use package version
-  `0.3-r1`.
+  `0.4-r1`.
 - Publish under Apache License 2.0 at
   `https://github.com/haitun001/luci-app-monitor`.
 - Keep `README.md` in Chinese and `README_EN.md` in English. Both documents
@@ -112,7 +120,7 @@
   snapshots are APK packages. Do not mix firmware family or series artifacts.
 - Verify branch CI before creating or moving a release tag. Pin third-party
   Actions by commit and use the GitHub CLI for Release creation.
-- The supplied v0.3 router is x86_64 ImmortalWrt 25.12.1. Use matching 25.12.1
+- The supplied router is x86_64 ImmortalWrt 25.12.1. Use matching 25.12.1
   packages for runtime verification. Earlier master runtime results remain
   historical evidence, not v0.3 runtime verification of master.
 
@@ -137,6 +145,28 @@
 - Remove router-side APKs and test artifacts; leave only installed packages.
 
 ## Progress
+
+- 2026-09-06: v0.4 scope is confirmed: show IPv4 only, label all connected
+  logical members in merged rows, review all English/Chinese strings, publish
+  v0.4 and deploy to the supplied ImmortalWrt 25.12.1 router. Its existing
+  netifd/device RPCs expose the required addresses, including distinct modem
+  and PPP addresses sharing eth4. GitHub HTTPS access and native wget/apk
+  options were inspected. The installation command must download exactly the
+  two matching APKs, verify both checksums, install offline with untrusted
+  signatures allowed, and clean only its private /tmp directory.
+- 2026-09-06: v0.4 IPv4 rendering, all 20 translated strings, 0.4-r1 metadata,
+  bilingual documentation and the isolated installer are implemented. Local
+  logic, JavaScript/JSON/YAML, gettext, upstream LuCI extraction and whitespace
+  checks pass. The installer check covers successful installation, failed
+  downloads, corrupt/missing/duplicate checksums and installation failure,
+  verifying cleanup without touching an unrelated APK. Source-overridden
+  browser checks pass 4004 connection records, interval boundaries, shared
+  slow reads, address changes/disconnection/reconnection with stable DOM and
+  focus, and sensor retries. One-second intervals are 996-1004 ms, five-second
+  intervals 5002-5005 ms, and concurrent poll/conntrack reads are each one.
+  Desktop and freshly loaded mobile screenshots show no cell overflow; a
+  resize-only mobile fixture is reloaded to close the theme's retained desktop
+  navigation before its screenshot. SDK and installed-package tests are pending.
 
 - 2026-09-06: v0.3 scope is confirmed: add per-line conntrack counts and fix
   verified WAN accounting defects. The user cancelled disconnect-total resets

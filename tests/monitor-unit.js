@@ -98,4 +98,32 @@ assert.equal(context.wanDevices(down, devices, context.lineDefinitions(down, dev
 const sample = context.rates(null, { rx: 100, tx: 100 }, 'eth4', 1000).sample;
 assert.equal(context.rates(sample, { rx: 90, tx: 200 }, 'eth4', 2000).rx, 0);
 assert.equal(context.rates(sample, { rx: 110, tx: 200 }, 'eth4', 1000).rx, 0);
-console.log('Monitor checks passed: connection attribution, ambiguity, malformed/large data, WAN eligibility, counter resets');
+const addressedInterfaces = interfaces.map(info => ({ ...info,
+	...(info.interface == 'lan' ? { 'ipv4-address': [ { address: '192.168.1.1' } ] } : {}),
+	...(info.interface == 'wan' ? { 'ipv4-address': [
+		{ address: '203.0.113.3', ptpaddress: '203.0.113.1' }, { address: '203.0.113.2' },
+		{ address: '203.0.113.2' }, { address: '999.0.0.1' }, { address: '0.0.0.0' },
+		null, {}, { address: 123 }, { address: '2001:db8::1' }, { address: '<img>' }
+	] } : {}),
+	...(info.interface == 'modem' ? { device: 'eth4', 'ipv4-address': [ { address: '192.168.100.2' } ] } : {})
+}));
+addressedInterfaces.push({ interface: 'wan_6', dynamic: true, up: true, device: 'pppoe-wan',
+	'ipv6-address': [ { address: '2001:db8::1' } ] });
+const addressLines = context.lineDefinitions(addressedInterfaces, devices).lines;
+const wanLine = addressLines.find(line => line.device == 'eth4');
+const lanLine = addressLines.find(line => line.device == 'br-lan');
+assert.equal(context.lineAddresses(wanLine, devices),
+	'modem (192.168.100.2), wan (203.0.113.2, 203.0.113.3)');
+assert.equal(context.lineAddresses(lanLine, devices), '192.168.1.1');
+assert.equal(context.lineAddresses({ ...wanLine, connected: false }, devices), '');
+assert.equal(context.lineAddresses({ ...wanLine, members: [ addressedInterfaces.at(-1) ] }, devices), '',
+	'IPv6-only logical interfaces must not borrow an upper device IPv4 address');
+const rawLine = addressLines.find(line => line.device == 'eth0');
+assert.equal(context.lineAddresses(rawLine, devices), '');
+assert.equal(context.lineAddresses(rawLine, { eth0: device('198.51.100.10') }), '198.51.100.10');
+assert.equal(context.lineAddresses({ ...rawLine, connected: false }, { eth0: device('198.51.100.10') }), '');
+lanLine.members[0]['ipv4-address'] = [ { address: '192.168.1.2' } ];
+assert.equal(context.lineAddresses(lanLine, devices), '192.168.1.2');
+lanLine.members[0]['ipv4-address'] = {};
+assert.equal(context.lineAddresses(lanLine, devices), '');
+console.log('Monitor checks passed: connection attribution, WAN rates, IPv4 ownership, deduplication and state changes');

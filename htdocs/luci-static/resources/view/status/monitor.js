@@ -264,6 +264,30 @@ function lineDefinitions(interfaces, devices) {
 	return { lines: lines, groups: byInterface };
 }
 
+function lineAddresses(line, devices) {
+	if (!line.connected)
+		return '';
+
+	function addresses(items) {
+		return (Array.isArray(items) ? items : []).map(function(item) {
+			return item && item.address;
+		}).filter(function(ip, index, all) {
+			return typeof(ip) == 'string' && ip != '0.0.0.0' &&
+				validation.parseIPv4(ip) && all.indexOf(ip) == index;
+		}).sort(L.naturalCompare).join(', ');
+	}
+
+	if (!line.members.length)
+		return addresses((devices[line.device] || {}).ipaddrs);
+
+	return line.members.filter(function(info) { return info.up === true; })
+		.sort(function(a, b) { return L.naturalCompare(a.interface, b.interface); })
+		.map(function(info) {
+			var ips = addresses(info['ipv4-address']);
+			return ips && line.members.length > 1 ? info.interface + ' (' + ips + ')' : ips;
+		}).filter(Boolean).join(', ');
+}
+
 function matchesDevice(pattern, name) {
 	if (pattern == '+')
 		return true;
@@ -557,12 +581,16 @@ return view.extend({
 		this.interfaceRows = {};
 
 		dom.content(this.interfaceBody, lines.map(L.bind(function(line) {
-			var nodes = {};
+			var nodes = {},
+			    statusCell = valueCell(nodes, 'status', _('Status', 'luci-app-monitor'));
+			nodes.address = document.createTextNode('');
+			nodes.addressBlock = E('span', { 'hidden': true }, [ E('br'), nodes.address ]);
+			statusCell.lastElementChild.appendChild(nodes.addressBlock);
 			this.interfaceRows[line.key] = nodes;
 
 			return E('tr', { 'class': 'tr' }, [
 				valueCell(nodes, 'name', _('Interface Name', 'luci-app-monitor')),
-				valueCell(nodes, 'status', _('Status', 'luci-app-monitor')),
+				statusCell,
 				valueCell(nodes, 'connections', _('Connections', 'luci-app-monitor')),
 				valueCell(nodes, 'rx', _('RX', 'luci-app-monitor')),
 				valueCell(nodes, 'tx', _('TX', 'luci-app-monitor')),
@@ -644,13 +672,16 @@ return view.extend({
 		lines.forEach(L.bind(function(line) {
 			var nodes = this.interfaceRows[line.key],
 			    current = line.device ? counters(devices, line.device) : null,
+			    addresses = lineAddresses(line, devices),
 			    status = line.connected ? _('Connected', 'luci-app-monitor') :
-					(line.pending ? _('Pending', 'luci-app-monitor') :
+					(line.pending ? _('Connecting', 'luci-app-monitor') :
 						_('Disconnected', 'luci-app-monitor'));
 
 			nodes.name.data = line.name == line.device
 				? line.name : '%s (%s)'.format(line.name, line.device || '-');
 			nodes.status.data = status;
+			nodes.address.data = addresses ? _('IP Address: %s', 'luci-app-monitor').format(addresses) : '';
+			nodes.addressBlock.hidden = !addresses;
 			nodes.connections.data = connections[line.key] == null ? '-' : String(connections[line.key]);
 
 			if (!current) {
@@ -776,8 +807,8 @@ return view.extend({
 		var summaryBody = E('tbody', [
 			valueRow(_('CPU Usage', 'luci-app-monitor'), this.metricNodes, 'cpu'),
 			valueRow(_('Memory Usage', 'luci-app-monitor'), this.metricNodes, 'memory'),
-			valueRow(_('Download', 'luci-app-monitor'), this.metricNodes, 'download'),
-			valueRow(_('Upload', 'luci-app-monitor'), this.metricNodes, 'upload')
+			valueRow(_('Download Speed', 'luci-app-monitor'), this.metricNodes, 'download'),
+			valueRow(_('Upload Speed', 'luci-app-monitor'), this.metricNodes, 'upload')
 		]);
 		this.sensorBody = E('tbody');
 		this.interfaceBody = E('tbody');

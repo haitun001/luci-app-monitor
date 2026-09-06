@@ -22,6 +22,7 @@ jobs:
           node --check htdocs/luci-static/resources/view/status/monitor.js
           node --check tests/router-e2e.js
           node tests/monitor-unit.js
+          node tests/install-command.js
       - name: Check version
         shell: bash
         run: |
