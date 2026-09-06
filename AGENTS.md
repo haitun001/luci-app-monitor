@@ -102,7 +102,7 @@
 
 ## Release Contract
 
-- The initial public release is `v0.1`. The next release is `v0.4`; both
+- The initial public release is `v0.1`. The current public release is `v0.4`; both
   `luci-app-monitor` and `luci-i18n-monitor-zh-cn` use package version
   `0.4-r1`.
 - Publish under Apache License 2.0 at
@@ -167,6 +167,44 @@
   Desktop and freshly loaded mobile screenshots show no cell overflow; a
   resize-only mobile fixture is reloaded to close the theme's retained desktop
   navigation before its screenshot. SDK and installed-package tests are pending.
+- 2026-09-06: Branch CI `34013249848` passed validation and all six SDK
+  targets for `fef9c88`. The matching ImmortalWrt 25.12.1 APKs passed SHA-256,
+  apk verification and manifest inspection before upgrading the router from
+  0.3-r1 to 0.4-r1. Installed view, menu, ACL and Chinese LMO hashes match
+  the archives. The main package remains noarch with only native libc and
+  luci-base dependencies. Uploaded branch APKs and their directory were removed.
+- 2026-09-06: The installed v0.4 branch runtime passed all fixtures, including
+  4004 conntrack records, raw/merged IPv4 ownership, repeated address changes,
+  disconnect/reconnect and pending state with stable text nodes and focus.
+  Seven English/Chinese desktop/mobile, address and sensor screenshots were
+  visually checked without overlap, overflow or column mismatch. The eight-minute
+  soak recorded 160 samples at 2979-3015 ms (3000.050 ms average), DOM
+  426 before/after/maximum, forced-GC heap 3193532 -> 3161080 bytes, one
+  concurrent poll and conntrack read, one sensor probe and no console/page
+  errors or logout. One-second intervals were 989-1008 ms; five-second
+  intervals were 4989-5006 ms. Network, firewall and LuCI configuration
+  hashes remain unchanged. Annotated tag v0.4 points to this verified
+  fef9c88 commit; tag CI `34014036466` and final Release installation are pending.
+- 2026-09-06: Tag CI `34014036466` passed validation, all six SDK targets
+  and Release publication. Public v0.4 is neither draft nor prerelease and
+  contains exactly twelve expected packages plus SHA256SUMS. Downloading all
+  thirteen assets and verifying every package checksum passes. The exact
+  single-line command in both READMEs downloaded the two 25.12.1 Release APKs
+  directly on the router, checked their hashes, replaced both installed
+  0.4-r1 packages offline and automatically removed its temporary directory.
+  Full SHA-256 hashes of all four installed runtime files match the archives
+  used for the eight-minute test. Installed database manifests use shortened
+  sha256-160 records, so compare full on-disk hashes with archive manifests
+  instead of comparing the two manifest formats as text.
+- 2026-09-06: The final installed-Release regression passed English desktop
+  and Chinese mobile checks, with both screenshots visually inspected.
+  One-second intervals were 990-1009 ms, five-second intervals 5000-5001 ms;
+  the 60-second selection refreshed immediately and reload restored three
+  seconds. Poll and conntrack concurrency stayed at one, focus was preserved,
+  and console/page errors were zero. Network, firewall and LuCI configuration
+  hashes remain unchanged. Router-side branch/Release APKs and test directories
+  are removed; the two installed plugin packages remain. Local verification
+  assets and test tools are outside Git in the Windows temporary directory.
 
 - 2026-09-06: v0.3 scope is confirmed: add per-line conntrack counts and fix
   verified WAN accounting defects. The user cancelled disconnect-total resets
