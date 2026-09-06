@@ -236,7 +236,9 @@ async function intervalFixture(browser) {
 	await waitForIdle(page, observed, 3000);
 	await page.unroute('**/cgi-download*');
 
+	start = observed.polls.length;
 	await select.selectOption('3');
+	await waitForPolls(page, observed.polls, start + 1, 2000);
 	await waitForIdle(page, observed, 3000);
 	await page.reload({ waitUntil: 'domcontentloaded' });
 	await intervalControl(page, 'Refresh Interval (seconds)');
@@ -252,6 +254,7 @@ async function intervalFixture(browser) {
 	});
 	assert.equal(results.consoleErrors.length, 0);
 	assert.equal(results.pageErrors.length, 0);
+	assert.equal(observed.maxConcurrentConnections, 1);
 	await context.close();
 }
 
