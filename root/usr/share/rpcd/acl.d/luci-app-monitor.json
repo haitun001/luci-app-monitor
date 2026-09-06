@@ -2,7 +2,9 @@
 	"luci-app-monitor": {
 		"description": "Grant read access to LuCI Monitor",
 		"read": {
+			"cgi-io": [ "download" ],
 			"file": {
+				"/proc/net/nf_conntrack": [ "read" ],
 				"/proc/stat": [ "read" ],
 				"/usr/sbin/sensors -j -A": [ "exec" ]
 			},

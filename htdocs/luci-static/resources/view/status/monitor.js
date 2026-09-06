@@ -5,6 +5,7 @@
 'require poll';
 'require rpc';
 'require uci';
+'require validation';
 
 var callSystemInfo = rpc.declare({
 	object: 'system',
@@ -29,7 +30,8 @@ function loadSnapshot(withSensors) {
 		L.resolveDefault(callInterfaceDump(), []),
 		L.resolveDefault(callNetworkDevices(), {}),
 		L.resolveDefault(fs.read('/proc/stat'), null),
-		withSensors ? L.resolveDefault(fs.exec('/usr/sbin/sensors', [ '-j', '-A' ]), null) : null
+		withSensors ? L.resolveDefault(fs.exec('/usr/sbin/sensors', [ '-j', '-A' ]), null) : null,
+		L.resolveDefault(fs.read_direct('/proc/net/nf_conntrack'), null)
 	]);
 }
 
@@ -231,6 +233,8 @@ function lineDefinitions(interfaces, devices) {
 			key: 'line\u0000' + group.device,
 			name: names.join('/'),
 			device: group.device,
+			aliases: Object.keys(group.aliases),
+			members: group.members,
 			connected: active != null,
 			pending: active == null && group.members.some(function(info) {
 				return info.pending === true;
@@ -249,6 +253,8 @@ function lineDefinitions(interfaces, devices) {
 			key: 'line\u0000' + name,
 			name: name,
 			device: name,
+			aliases: [ name ],
+			members: [],
 			connected: devices[name].up === true,
 			pending: false,
 			uptime: null
@@ -287,7 +293,8 @@ function wanDevices(interfaces, devices, groups) {
 		    pointToPoint = devices[name] && devices[name].flags &&
 			devices[name].flags.pointtopoint === true;
 
-		if (!target || !devices[target] || devices[target].up !== true || !counters(devices, target))
+		if (!target || !devices[target] || devices[target].up !== true || !counters(devices, target) ||
+			(group && !group.members.some(function(info) { return info.up === true; })))
 			return;
 
 		((group ? group.lower : !pointToPoint) ? lower : fallback)[target] = true;
@@ -301,7 +308,7 @@ function wanDevices(interfaces, devices, groups) {
 
 		var group = groups[info.interface];
 
-		if (!group || !group.members.some(hasDefaultRoute))
+		if (!group || info.up !== true)
 			return;
 
 		addCandidate(group);
@@ -339,6 +346,121 @@ function wanDevices(interfaces, devices, groups) {
 		names: names,
 		available: names.every(function(name) { return counters(devices, name) != null; })
 	};
+}
+
+function connectionCounts(data, lines, devices, wan) {
+	var counts = {}, prefixes = [], addresses = new Map(), local = new Set(), parsed = new Map(),
+	    transit = {};
+
+	function address(text) {
+		if (typeof(text) != 'string')
+			return null;
+		if (!parsed.has(text))
+			parsed.set(text, text.indexOf(':') >= 0 ? validation.parseIPv6(text) : validation.parseIPv4(text));
+		return parsed.get(text);
+	}
+
+	function addAddress(item, key) {
+		var ip = address(item.address), mask = address(item.netmask);
+		if (!ip)
+			return;
+		var token = ip.join(','), owners = addresses.get(token) || new Set();
+		local.add(token);
+		if (key == null)
+			return;
+		owners.add(key);
+		addresses.set(token, owners);
+		counts[key] = 0;
+		if (!mask || mask.length != ip.length)
+			return;
+		var bits = mask.map(function(word) { return word.toString(2).padStart(ip.length == 4 ? 8 : 16, '0'); }).join('');
+		if (!/^1+0*$/.test(bits))
+			return;
+		prefixes.push({ key: key, ip: ip, mask: mask, length: bits.indexOf('0') < 0 ? bits.length : bits.indexOf('0') });
+	}
+
+	Object.keys(devices).forEach(function(name) {
+		L.toArray(devices[name].ipaddrs).concat(L.toArray(devices[name].ip6addrs)).forEach(function(item) {
+			if (item)
+				addAddress(item, null);
+		});
+	});
+	lines.forEach(function(line) {
+		counts[line.key] = null;
+		if (!line.connected)
+			return;
+		line.aliases.forEach(function(name) {
+			var device = devices[name] || {};
+			L.toArray(device.ipaddrs).concat(L.toArray(device.ip6addrs)).forEach(function(item) {
+				if (item)
+					addAddress(item, line.key);
+			});
+		});
+		if (wan.names.indexOf(line.device) >= 0 || line.members.some(hasDefaultRoute))
+			transit[line.key] = true;
+	});
+
+	function owners(ip) {
+		var exact = addresses.get(ip.join(','));
+		if (exact)
+			return Array.from(exact);
+		var best = -1, matches = new Set();
+		prefixes.forEach(function(prefix) {
+			if (prefix.ip.length != ip.length || prefix.length < best ||
+				!ip.every(function(word, i) { return (word & prefix.mask[i]) == (prefix.ip[i] & prefix.mask[i]); }))
+				return;
+			if (prefix.length > best)
+				matches.clear();
+			best = prefix.length;
+			matches.add(prefix.key);
+		});
+		return Array.from(matches);
+	}
+
+	var valid = typeof(data) == 'string';
+	if (valid) {
+		// Keep only per-refresh aggregates; conntrack tuples have no ingress/egress device fields.
+		data.split('\n').forEach(function(record) {
+			if (!record.trim())
+				return;
+			var family = /^(ipv4|ipv6)\s+\d+\s+\S+\s+\d+\s+/.exec(record),
+			    src = [], dst = [], match, fields = /\b(src|dst)=(\S+)/g;
+			while ((match = fields.exec(record)) != null)
+				(match[1] == 'src' ? src : dst).push(address(match[2]));
+			var endpoints = src.concat(dst);
+			if (!family || src.length != 2 || dst.length != 2 || endpoints.some(function(ip) {
+				return !ip || ip.length != (family[1] == 'ipv4' ? 4 : 8);
+			})) {
+				valid = false;
+				return;
+			}
+			var matches = endpoints.map(owners), seen = new Set(),
+			    internalPeers = matches[0].some(function(key) { return !transit[key]; }) &&
+				    matches[1].some(function(key) { return !transit[key]; });
+			matches.forEach(function(keys, index) {
+				keys.forEach(function(key) {
+					// Hairpin DNAT must not charge the WAN owning the translated public address.
+					if (internalPeers && index >= 2 && transit[key])
+						return;
+					if (keys.length > 1)
+						counts[key] = null;
+					seen.add(key);
+				});
+			});
+			var toRouter = local.has(dst[0].join(',')) && dst[0].join(',') == src[1].join(',');
+			if (!toRouter && !internalPeers && !Array.from(seen).some(function(key) { return transit[key]; }))
+				Object.keys(transit).forEach(function(key) { counts[key] = null; });
+			seen.forEach(function(key) {
+				if (counts[key] != null)
+					counts[key]++;
+			});
+		});
+	}
+
+	lines.forEach(function(line) {
+		counts[line.key] = !line.connected ? 0 : valid ? counts[line.key] : null;
+	});
+	return counts;
 }
 
 function parseSensors(result) {
@@ -438,6 +560,7 @@ return view.extend({
 			return E('tr', { 'class': 'tr' }, [
 				valueCell(nodes, 'name', _('Interface Name', 'luci-app-monitor')),
 				valueCell(nodes, 'status', _('Status', 'luci-app-monitor')),
+				valueCell(nodes, 'connections', _('Connections', 'luci-app-monitor')),
 				valueCell(nodes, 'rx', _('RX', 'luci-app-monitor')),
 				valueCell(nodes, 'tx', _('TX', 'luci-app-monitor')),
 				valueCell(nodes, 'totalRx', _('Total RX', 'luci-app-monitor')),
@@ -488,7 +611,8 @@ return view.extend({
 		    definitions = lineDefinitions(allInterfaces, devices),
 		    lines = definitions.lines,
 		    wan = wanDevices(allInterfaces, devices, definitions.groups),
-		    now = Date.now(),
+		    connections = connectionCounts(snapshot[5], lines, devices, wan),
+		    now = performance.now(),
 		    interfaceKey = JSON.stringify(lines.map(function(line) { return line.key; }));
 
 		this.cpuSample = cpu.sample;
@@ -515,6 +639,7 @@ return view.extend({
 			nodes.name.data = line.name == line.device
 				? line.name : '%s (%s)'.format(line.name, line.device || '-');
 			nodes.status.data = status;
+			nodes.connections.data = connections[line.key] == null ? '-' : String(connections[line.key]);
 
 			if (!current) {
 				nodes.rx.data = line.connected ? '-' : formatBytes(0, true);
@@ -543,21 +668,21 @@ return view.extend({
 		this.lineSamples = nextSamples;
 
 		if (wan.available) {
-			var total = { rx: 0, tx: 0 };
+			var total = { rx: 0, tx: 0 }, nextWanSamples = {};
 
-			wan.names.forEach(function(name) {
-				var current = counters(devices, name);
+			wan.names.forEach(L.bind(function(name) {
+				var current = rates(this.wanSamples[name], counters(devices, name), name, now);
 				total.rx += current.rx;
 				total.tx += current.tx;
-			});
+				nextWanSamples[name] = current.sample;
+			}, this));
 
-			var totalRates = rates(this.totalSample, total, JSON.stringify(wan.names), now);
-			this.totalSample = totalRates.sample;
-			this.metricNodes.download.data = formatBytes(totalRates.rx, true);
-			this.metricNodes.upload.data = formatBytes(totalRates.tx, true);
+			this.wanSamples = nextWanSamples;
+			this.metricNodes.download.data = formatBytes(total.rx, true);
+			this.metricNodes.upload.data = formatBytes(total.tx, true);
 		}
 		else {
-			this.totalSample = null;
+			this.wanSamples = {};
 			this.metricNodes.download.data = '-';
 			this.metricNodes.upload.data = '-';
 		}
@@ -600,7 +725,7 @@ return view.extend({
 		this.interfaceRows = {};
 		this.sensorNodes = {};
 		this.lineSamples = {};
-		this.totalSample = null;
+		this.wanSamples = {};
 		this.cpuSample = null;
 		this.pollSensors = true;
 		this.sensorFailures = 0;
@@ -660,6 +785,7 @@ return view.extend({
 				E('thead', {}, E('tr', { 'class': 'tr table-titles' }, [
 					E('th', { 'class': 'th left' }, _('Interface Name', 'luci-app-monitor')),
 					E('th', { 'class': 'th left' }, _('Status', 'luci-app-monitor')),
+					E('th', { 'class': 'th left' }, _('Connections', 'luci-app-monitor')),
 					E('th', { 'class': 'th left' }, _('RX', 'luci-app-monitor')),
 					E('th', { 'class': 'th left' }, _('TX', 'luci-app-monitor')),
 					E('th', { 'class': 'th left' }, _('Total RX', 'luci-app-monitor')),

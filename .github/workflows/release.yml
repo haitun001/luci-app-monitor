@@ -17,6 +17,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Check monitor logic
+        run: |
+          node --check htdocs/luci-static/resources/view/status/monitor.js
+          node --check tests/router-e2e.js
+          node tests/monitor-unit.js
       - name: Check version
         shell: bash
         run: |

@@ -5,28 +5,34 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
 
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:640
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:765
 msgctxt "luci-app-monitor"
 msgid "CPU Usage"
 msgstr "CPU 使用率"
 
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:511
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:635
 msgctxt "luci-app-monitor"
 msgid "Connected"
 msgstr "已连接"
 
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:445
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:667
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:568
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:793
 msgctxt "luci-app-monitor"
 msgid "Connected Since"
 msgstr "连接时间"
 
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:513
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:563
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:788
+msgctxt "luci-app-monitor"
+msgid "Connections"
+msgstr "连接数"
+
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:637
 msgctxt "luci-app-monitor"
 msgid "Disconnected"
 msgstr "未连接"
 
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:642
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:767
 msgctxt "luci-app-monitor"
 msgid "Download"
 msgstr "下载"
@@ -35,68 +41,68 @@ msgstr "下载"
 msgid "Grant read access to LuCI Monitor"
 msgstr "授予 LuCI 监视器只读访问权限"
 
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:439
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:661
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:561
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:786
 msgctxt "luci-app-monitor"
 msgid "Interface Name"
 msgstr "线路名称"
 
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:658
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:783
 msgctxt "luci-app-monitor"
 msgid "Interfaces"
 msgstr "线路"
 
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:641
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:766
 msgctxt "luci-app-monitor"
 msgid "Memory Usage"
 msgstr "内存使用率"
 
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:512
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:636
 msgctxt "luci-app-monitor"
 msgid "Pending"
 msgstr "连接中"
 
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:441
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:663
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:564
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:789
 msgctxt "luci-app-monitor"
 msgid "RX"
 msgstr "接收 (RX)"
 
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:654
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:779
 msgctxt "luci-app-monitor"
 msgid "Refresh Interval (seconds)"
 msgstr "刷新间隔（秒）"
 
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:649
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:774
 #: luci-app-monitor/root/usr/share/luci/menu.d/luci-app-monitor.json:3
 msgid "Router Monitor"
 msgstr "监视器"
 
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:440
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:662
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:562
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:787
 msgctxt "luci-app-monitor"
 msgid "Status"
 msgstr "状态"
 
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:442
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:664
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:565
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:790
 msgctxt "luci-app-monitor"
 msgid "TX"
 msgstr "发送 (TX)"
 
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:443
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:665
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:566
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:791
 msgctxt "luci-app-monitor"
 msgid "Total RX"
 msgstr "累计接收"
 
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:444
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:666
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:567
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:792
 msgctxt "luci-app-monitor"
 msgid "Total TX"
 msgstr "累计发送"
 
-#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:643
+#: luci-app-monitor/htdocs/luci-static/resources/view/status/monitor.js:768
 msgctxt "luci-app-monitor"
 msgid "Upload"
 msgstr "上传"

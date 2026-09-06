@@ -17,6 +17,17 @@
   one through 60 seconds.
 - On an interval change, replace the registered interval and request one
   immediate refresh. Reuse any in-flight refresh so requests never overlap.
+- Keep the native LuCI session lifecycle. The reported foreground expiry was
+  not reproduced; the user deferred additional keepalive changes for v0.3.
+- Place Connections immediately after Status. Read the complete conntrack
+  table with native fs.read_direct('/proc/net/nf_conntrack') and exact read
+  permission plus cgi-io download access. Ordinary file.read truncates this
+  proc file to 4096 bytes and must not be used for connection counts.
+- Count each original/reply conntrack record once per associated accounting
+  device, including all tracked protocols and states. Use addresses, NAT
+  tuples and interface subnets; do not infer a policy-routed egress or copy a
+  bridge count to its unaddressed ports. Incomplete or ambiguous attribution
+  and failed/malformed reads show '-'; disconnected rows show zero.
 - Update existing text nodes in place. Rebuild a table body only when the set
   of interface or sensor keys changes. Never replace focused controls.
 - Read aggregate CPU counters from `/proc/stat`. Calculate multi-core CPU usage
@@ -55,6 +66,8 @@
   connected WAN device once, with RX as download and TX as upload.
 - Calculate rates from counter deltas and actual elapsed time. A first sample,
   device change, counter reset, or non-positive interval yields zero.
+- Use a monotonic browser clock. Calculate WAN device rates separately before
+  summing them, so one counter reset cannot cancel another device's traffic.
 - Format speed with binary units from `KB/s` through `GB/s`, and totals from
   `KB` through `TB`, always with two decimals.
 - Derive connection start from router epoch minus interface uptime and render
@@ -67,7 +80,7 @@
 - RPC and filesystem permissions must be read-only and least-privilege.
 - Never store router credentials, host keys, APKs, screenshots, build output,
   or temporary test fixtures in Git.
-- Do not use or modify `/home/ht/immortalwrt` for `v0.2`; the user withdrew it
+- Do not use or modify `/home/ht/immortalwrt`; the user withdrew it
   as a supported build environment after deleting the original repository.
   Use the existing GitHub Actions SDK matrix as the authoritative build path.
 - Use `apply_patch` for manual source edits. Keep code minimal and avoid
@@ -76,9 +89,9 @@
 
 ## Release Contract
 
-- The initial public release is `v0.1`. The current release is `v0.2`; both
+- The initial public release is `v0.1`. The current release target is `v0.3`; both
   `luci-app-monitor` and `luci-i18n-monitor-zh-cn` use package version
-  `0.2-r1`.
+  `0.3-r1`.
 - Publish under Apache License 2.0 at
   `https://github.com/haitun001/luci-app-monitor`.
 - Keep `README.md` in Chinese and `README_EN.md` in English. Both documents
@@ -94,15 +107,16 @@
   snapshots are APK packages. Do not mix firmware family or series artifacts.
 - Verify branch CI before creating or moving a release tag. Pin third-party
   Actions by commit and use the GitHub CLI for Release creation.
-- The supplied x86_64 ImmortalWrt master router is runtime-tested. Other listed
-  targets are SDK build-tested and must be documented as such.
+- The supplied v0.3 router is x86_64 ImmortalWrt 25.12.1. Use matching 25.12.1
+  packages for runtime verification. Earlier master runtime results remain
+  historical evidence, not v0.3 runtime verification of master.
 
 ## Required Verification Before Delivery
 
 - Validate JavaScript syntax, JSON, translations, LuCI i18n extraction, and
   package metadata.
 - Build the application and Simplified Chinese packages in all six GitHub
-  Actions SDK targets. Use the successful ImmortalWrt master branch artifacts
+  Actions SDK targets. Use the successful ImmortalWrt 25.12.1 branch artifacts
   for pre-tag router verification.
 - Install both packages on the supplied router and test the real LuCI page in
   English and Chinese at desktop and mobile sizes.
@@ -118,6 +132,25 @@
 - Remove router-side APKs and test artifacts; leave only installed packages.
 
 ## Progress
+
+- 2026-09-06: v0.3 scope is confirmed: add per-line conntrack counts and fix
+  verified WAN accounting defects. The user cancelled disconnect-total resets
+  and deferred extra session keepalive changes unless expiry is reproduced.
+  SSH/RPC inspection identifies the new router as ImmortalWrt 25.12.1 with
+  Material theme and a 3600-second LuCI timeout. A private six-second RPC
+  session remained valid across twelve seconds of polling. No router network,
+  firewall or session-timeout configuration was changed.
+- 2026-09-06: Source inspection and router data show why native direct reads
+  are required: the conntrack table exceeded 800 KB, while rpcd file.read
+  reads only 4096 bytes from zero-size proc files. Local checks reproduce WAN
+  aggregation cancellation on a device counter reset and omission of eligible
+  connected WAN members without default routes. Implementation, local logic
+  checks, JavaScript/JSON/YAML/metadata validation, gettext validation, and
+  upstream LuCI i18n extraction pass. The real LuCI preflight with intercepted
+  v0.3 source passes 4004 connection records, native IPv6 parsing, ambiguity,
+  malformed/empty recovery, 18 network rows, hotplug, CPU sampling and a WAN
+  counter reset. Its desktop screenshot has no overlap or overflow. SDK builds
+  and installed-package bilingual/soak verification are pending.
 
 - 2026-08-22: Contract created before implementation. Runtime behavior and
   acceptance criteria are locked.
