@@ -23,6 +23,8 @@
   table with native fs.read_direct('/proc/net/nf_conntrack') and exact read
   permission plus cgi-io download access. Ordinary file.read truncates this
   proc file to 4096 bytes and must not be used for connection counts.
+- Read conntrack only from the poll callback, avoiding two large reads during
+  page initialization. Initial connection counts show '-' until the first poll.
 - Count each original/reply conntrack record once per associated accounting
   device, including all tracked protocols and states. Use addresses, NAT
   tuples and interface subnets; do not infer a policy-routed egress or copy a
@@ -92,7 +94,7 @@
 
 ## Release Contract
 
-- The initial public release is `v0.1`. The current release target is `v0.3`; both
+- The initial public release is `v0.1`. The current public release is `v0.3`; both
   `luci-app-monitor` and `luci-i18n-monitor-zh-cn` use package version
   `0.3-r1`.
 - Publish under Apache License 2.0 at
@@ -165,9 +167,10 @@
   concurrent poll and connection-read requests are both one. Installed-package
   bilingual and eight-minute runtime verification remain pending.
 
-- 2026-09-06: Final-source browser verification reproduced an initialization
-  race: `load()` and LuCI's first poll could overlap two conntrack reads before
-  the refresh lock was established. Initial snapshots now omit conntrack and
+- 2026-09-06: Final-source browser verification observed tightly spaced initial
+  load and first-poll conntrack reads with interleaved browser request events.
+  Those events alone do not prove transport overlap. Initial snapshots now
+  omit conntrack to avoid redundant large reads during initialization, and
   the single poll callback owns that read. The full source-overridden suite
   passes with one concurrent poll and one concurrent conntrack read, 4004
   fixture records, 853186-byte real reads, 1-second intervals of 999-1006 ms,
@@ -176,6 +179,44 @@
   The existing `v0.3` Release was created before this correction and must be
   replaced after the new branch and tag CI runs; corrected package runtime
   verification is pending.
+- 2026-09-06: Branch CI run `34010147829` passed validation and all six SDK
+  targets for `7a8529f`. Its two ImmortalWrt 25.12.1 packages were checked with
+  SHA-256 and `apk verify --allow-untrusted`, then installed offline. The view,
+  menu, ACL and Chinese LMO hashes match their package manifests. The installed
+  view hash is `7ae9defd02d278f3a4b02da1e1c1f33919c8c2a2c5b37527a314c1a228b8b682`.
+  The full installed-package suite passes connection attribution, CPU and WAN
+  calculations, 18 fixture rows, sensor retries, interval changes, focus and
+  bilingual desktop/mobile layout. All six screenshots were visually checked.
+  The eight-minute three-second soak recorded 160 samples at 2986-3014 ms
+  (2999.937 ms average), DOM 414 before/after/maximum, forced-GC heap
+  3184100 -> 3149860 bytes, one concurrent poll and conntrack request, one
+  sensor request, no console/page errors and no logout. One-second intervals
+  were 999-1008 ms and five-second intervals were 4992-5012 ms. Network,
+  firewall and LuCI configuration hashes remain unchanged.
+- 2026-09-06: Completed CI logs identify an earlier 24.10.8 delay as the
+  258916431-byte SDK download taking about 20 minutes, not runner cleanup.
+  The temporary diagnostic harness's negative request counts resulted from
+  inserting an unbraced logging statement and do not establish duplicate
+  browser completion events. That temporary harness is not part of the repo.
+- 2026-09-06: Annotated tag `v0.3` now points to `7a8529f`. Tag CI run
+  `34011144034` passed metadata validation, all six SDK builds and GitHub
+  Release publication. It replaces the initial assets from `e733469`.
+  The final non-draft, non-prerelease Release contains exactly the 12 expected
+  firmware-prefixed packages and SHA256SUMS; downloading all 13 assets and
+  checking every package checksum passes. The two ImmortalWrt 25.12.1 Release
+  APKs pass router-side SHA-256 and `apk verify --allow-untrusted`, and were
+  installed offline. Both installed packages report `0.3-r1`; view, menu, ACL
+  and Chinese LMO hashes match the final Release manifests and the runtime
+  which passed the eight-minute soak. The final installed-package interval
+  check records 996-1002 ms at one second and 5000-5002 ms at five seconds,
+  immediate 60-second selection, one concurrent poll and conntrack request,
+  preserved focus, reload restoring three seconds, and no console/page errors.
+  English desktop and Chinese mobile screenshots were checked again. Router
+  network, firewall and LuCI configuration hashes remain unchanged. Router
+  APKs and their temporary directory were removed; only installed packages
+  remain. Automatic command policy blocked both scoped-batch and explicit-path
+  local temporary-directory cleanup. Local test tools, screenshots and APKs
+  therefore remain under the system temporary directory, outside Git.
 - 2026-08-22: Contract created before implementation. Runtime behavior and
   acceptance criteria are locked.
 - 2026-08-22: Verified on the target router that configured rows are `lan`,
